@@ -217,6 +217,15 @@ text_sensor:
       }
       return mode_str;
 
+  - platform: template
+    name: "Air filter alarm status"
+    lambda: |-
+      if (id(nilan_filter_alarm).state) {
+        return {"Skift filter"};
+      } else {
+        return {"Filter OK"};
+      }
+
 binary_sensor:
 #########################
 #### INPUT REGISTERS ####
