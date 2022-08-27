@@ -17,24 +17,6 @@ sensor:
     device_class: temperature
     filters:
       - multiply: 0.1
-  # Battery
-  - platform:               modbus_controller
-    name:                   ${name} Battery ${channel_13_friendly_name}
-    id:                     ${device}_battery_${channel_13_id}
-    modbus_controller_id:   ${device}_modbus_controller
-    custom_command: 
-      - 0x01
-      - 0x43
-      - 0x01
-      - 0x0A
-      - 0x0C # channel 13 (0C)
-      - 0x01
-    value_type: U_WORD
-    unit_of_measurement: "%"
-    accuracy_decimals: 1
-    device_class: battery
-    filters:
-      - multiply: 10 
 
 # ----------- Binary ----------- #
 binary_sensor:
