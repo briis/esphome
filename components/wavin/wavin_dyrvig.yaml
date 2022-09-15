@@ -11,15 +11,15 @@ substitutions:
   channel_01_friendly_name:  "Bryggers"
   channel_02_friendly_name:  "Bjarnes Kontor"
   channel_03_friendly_name:  "Køkken"
-  channel_04_friendly_name:  "Spise område"
+#  channel_04_friendly_name:  "Spise område"
   channel_05_friendly_name:  "Stue"
-  channel_06_friendly_name:  "Stue Kreds 2"
+#  channel_06_friendly_name:  "Stue Kreds 2"
   channel_07_friendly_name:  "Soveværelse"
   channel_08_friendly_name:  "Badeværelse"
   channel_09_friendly_name:  "Walkin"
   channel_10_friendly_name: "Daisys Kontor"
   channel_11_friendly_name: "Gæsteværelse"
-  channel_12_friendly_name: "Entre"
+#  channel_12_friendly_name: "Entre"
   channel_13_friendly_name: "Gæstebadeværelse"
   channel_14_friendly_name: "<Unused>"
   channel_15_friendly_name: "<Unused>"
@@ -29,19 +29,16 @@ substitutions:
   channel_01_id: utility_room
   channel_02_id: office_bjarne
   channel_03_id: kitchen
-  channel_04_id: dining_area
+#  channel_04_id: dining_area
   channel_05_id: living_room_1
-  channel_06_id: living_room_2
+#  channel_06_id: living_room_2
   channel_07_id: bedroom
   channel_08_id: bathroom
   channel_09_id: walkin_closet
   channel_10_id: office_daisy
   channel_11_id: guest_room
-  channel_12_id: hallway
+#  channel_12_id: hallway
   channel_13_id: guest_bathroom
-  channel_14_id: unused_14
-  channel_15_id: unused_15
-  channel_16_id: unused_16
 
 esphome:
   name: wavin
@@ -75,23 +72,23 @@ captive_portal:
 
 packages:
   remote_package:
-    url: https://github.com/heinekmadsen/esphome_components
+    url: https://github.com/briis/esphome
     ref: main
     files: 
-      - components/wavinahc9000v2/configs/basic.yaml # REQUIRED FOR WAVIN AHC 9000
-      - components/wavinahc9000v2/configs/channel_01.yaml
-      - components/wavinahc9000v2/configs/channel_02.yaml
-      - components/wavinahc9000v2/configs/channel_03.yaml
-      - components/wavinahc9000v2/configs/channel_04.yaml
-      - components/wavinahc9000v2/configs/channel_05.yaml
-      - components/wavinahc9000v2/configs/channel_06.yaml
-      - components/wavinahc9000v2/configs/channel_07.yaml
-      - components/wavinahc9000v2/configs/channel_08.yaml
-      - components/wavinahc9000v2/configs/channel_09.yaml
-      - components/wavinahc9000v2/configs/channel_10.yaml
-#      - components/wavinahc9000v2/configs/channel_11.yaml
-#      - components/wavinahc9000v2/configs/channel_12.yaml
-#      - components/wavinahc9000v2/configs/channel_13.yaml
+      - components/wavin/basic.yaml # REQUIRED FOR WAVIN AHC 9000
+      - components/wavin/channel_01.yaml
+      - components/wavin/channel_02.yaml
+      - components/wavin/channel_03.yaml
+#      - components/wavin/channel_04.yaml
+      - components/wavin/channel_05.yaml
+#      - components/wavin/channel_06.yaml
+      - components/wavin/channel_07.yaml
+      - components/wavin/channel_08.yaml
+      - components/wavin/channel_09.yaml
+      - components/wavin/channel_10.yaml
+      - components/wavin/channel_11.yaml
+#      - components/wavin/channel_12.yaml
+      - components/wavin/channel_13.yaml
     refresh: 0s
 
 uart:
@@ -109,4 +106,5 @@ modbus_controller:
   id: ${device}_modbus_controller
   address: 1
   modbus_id: wavin_modbus
-  update_interval: 5s 
+  update_interval: 5s    
+    
