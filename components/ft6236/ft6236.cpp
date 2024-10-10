@@ -23,7 +23,7 @@ namespace ft6236 {
 
 static const char *TAG = "ft6236";
 
-FT6236Touchscreen::FT6236Touchscreen(void) { touches = 0; }
+FT6236Touchscreen::FT6236Touchscreen(void) : interval_(1000), display_(nullptr), listener_(nullptr) { touches = 0; }
 
 void FT6236Touchscreen::setup() {
   ESP_LOGCONFIG(TAG, "Setting up FT6236...");
@@ -43,11 +43,13 @@ void FT6236Touchscreen::setup() {
 }
 
 void FT6236Touchscreen::loop() {
-  ESP_LOGD(TAG, "Updating FT6236 touch data...");
   uint8_t n = touched();
   if (n > 0) {
     TS_Point point = getPoint(0);
     ESP_LOGD(TAG, "Touch at: X=%d, Y=%d", point.x, point.y);
+    if (this->listener_) {
+      this->listener_();  // Trigger the listener if touch detected
+    }
   }
 }
 
@@ -79,7 +81,9 @@ void FT6236Touchscreen::readData(void) {
   }
 }
 
-void FT6236Touchscreen::writeRegister8(uint8_t reg, uint8_t val) { this->write_byte(reg, val); }
+void FT6236Touchscreen::writeRegister8(uint8_t reg, uint8_t val) {
+  this->write_byte(reg, val);
+}
 
 uint8_t FT6236Touchscreen::readRegister8(uint8_t reg) {
   uint8_t val;
@@ -91,13 +95,6 @@ void FT6236Touchscreen::dump_config() {
   ESP_LOGCONFIG(TAG, "FT6236:");
   ESP_LOGCONFIG(TAG, "  I2C Address: 0x38");
 }
-
-TS_Point::TS_Point(void) : x(0), y(0), z(0) {}
-TS_Point::TS_Point(int16_t x, int16_t y, int16_t z) : x(x), y(y), z(z) {}
-
-bool TS_Point::operator==(TS_Point p1) { return (p1.x == x) && (p1.y == y) && (p1.z == z); }
-
-bool TS_Point::operator!=(TS_Point p1) { return (p1.x != x) || (p1.y != y) || (p1.z != z); }
 
 }  // namespace ft6236
 }  // namespace esphome

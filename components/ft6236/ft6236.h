@@ -34,19 +34,6 @@ namespace ft6236 {
 #define FT6236U_CHIPID 0x64     // FT6236U Chip ID
 #define FT6206_CHIPID 0x06      // FT6206 Chip ID
 
-class TS_Point {
- public:
-  TS_Point(void);
-  TS_Point(int16_t x, int16_t y, int16_t z);
-
-  bool operator==(TS_Point);
-  bool operator!=(TS_Point);
-
-  int16_t x;
-  int16_t y;
-  int16_t z;
-};
-
 class FT6236Touchscreen : public Component, public i2c::I2CDevice {
  public:
   FT6236Touchscreen(void);
@@ -54,6 +41,15 @@ class FT6236Touchscreen : public Component, public i2c::I2CDevice {
   void setup() override;
   void loop() override;
   void dump_config() override;
+
+  // Set update interval
+  void set_interval(uint32_t interval) { this->interval_ = interval; }
+  
+  // Set display (if applicable)
+  void set_display(void* display) { this->display_ = display; }
+
+  // Register listener for touch events
+  void register_listener(std::function<void()> listener) { this->listener_ = listener; }
 
   uint8_t touched(void);
   TS_Point getPoint(uint8_t n = 0);
@@ -65,6 +61,9 @@ class FT6236Touchscreen : public Component, public i2c::I2CDevice {
 
   uint8_t touches;
   uint16_t touchX[2], touchY[2], touchID[2];
+  uint32_t interval_;  // For update interval
+  void* display_;  // For display interaction (if applicable)
+  std::function<void()> listener_;  // For event listening
 };
 
 }  // namespace ft6236
