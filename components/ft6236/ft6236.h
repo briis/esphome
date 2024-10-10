@@ -57,12 +57,15 @@ class FT6236Touchscreen : public Component, public i2c::I2CDevice {
 
   // Set update interval
   void set_interval(uint32_t interval) { this->interval_ = interval; }
-  
+
   // Set display (if applicable)
   void set_display(void* display) { this->display_ = display; }
 
-  // Register listener for touch events
-  void register_listener(std::function<void()> listener) { this->listener_ = listener; }
+  // Get update trigger for custom event handling
+  Trigger<>* get_update_trigger() { return &this->update_trigger_; }
+
+  // Register listener for touch events, including LVGL touch listeners
+  void register_listener(lvgl::LVTouchListener* listener) { this->lvgl_listener_ = listener; }
 
   uint8_t touched(void);
   TS_Point getPoint(uint8_t n = 0);
@@ -76,7 +79,8 @@ class FT6236Touchscreen : public Component, public i2c::I2CDevice {
   uint16_t touchX[2], touchY[2], touchID[2];
   uint32_t interval_;  // For update interval
   void* display_;  // For display interaction (if applicable)
-  std::function<void()> listener_;  // For event listening
+  Trigger<> update_trigger_;  // Event trigger for updates
+  lvgl::LVTouchListener* lvgl_listener_;  // LVGL listener for touch events
 };
 
 }  // namespace ft6236
