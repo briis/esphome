@@ -19,7 +19,6 @@ MIT license, all text above must be included in any redistribution
 
 #include "esphome/core/component.h"
 #include "esphome/components/i2c/i2c.h"
-#include "esphome/components/lvgl/lvgl.h"  // For LVTouchListener
 
 
 namespace esphome {
@@ -66,8 +65,8 @@ class FT6236Touchscreen : public Component, public i2c::I2CDevice {
   // Get update trigger for custom event handling
   Trigger<>* get_update_trigger() { return &this->update_trigger_; }
 
-  // Register listener for touch events, including LVGL touch listeners
-  void register_listener(lvgl::LVTouchListener* listener) { this->lvgl_listener_ = listener; }
+    // Register listener for touch events
+  void register_listener(std::function<void()> listener) { this->listener_ = listener; }
 
   uint8_t touched(void);
   TS_Point getPoint(uint8_t n = 0);
