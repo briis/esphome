@@ -34,6 +34,19 @@ namespace ft6236 {
 #define FT6236U_CHIPID 0x64     // FT6236U Chip ID
 #define FT6206_CHIPID 0x06      // FT6206 Chip ID
 
+class TS_Point {
+ public:
+  TS_Point(void);
+  TS_Point(int16_t x, int16_t y, int16_t z);
+
+  bool operator==(TS_Point);
+  bool operator!=(TS_Point);
+
+  int16_t x;
+  int16_t y;
+  int16_t z;
+};
+
 class FT6236Touchscreen : public Component, public i2c::I2CDevice {
  public:
   FT6236Touchscreen(void);
