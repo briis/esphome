@@ -19,6 +19,8 @@ MIT license, all text above must be included in any redistribution
 
 #include "esphome/core/component.h"
 #include "esphome/components/i2c/i2c.h"
+#include "esphome/components/lvgl/lvgl.h"  // For LVTouchListener
+
 
 namespace esphome {
 namespace ft6236 {
