@@ -5,6 +5,9 @@ from esphome import pins
 from esphome.components import i2c, touchscreen
 from esphome.const import CONF_ID, CONF_INTERRUPT_PIN, CONF_RESET_PIN, CONF_THRESHOLD
 
+CODEOWNERS = ["@briis"]
+DEPENDENCIES = ["i2c"]
+
 # Namespace for the FT6236 component
 ft6236_ns = cg.esphome_ns.namespace("ft6236")
 FT6236Touchscreen = ft6236_ns.class_(
