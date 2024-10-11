@@ -17,23 +17,15 @@ MIT license, all text above must be included in any redistribution
 */
 #pragma once
 
-#include "esphome/core/component.h"
 #include "esphome/components/i2c/i2c.h"
+#include "esphome/components/touchscreen/touchscreen.h"
+#include "esphome/core/component.h"
 
 
 namespace esphome {
 namespace ft6236 {
 
-#define FT6236_ADDR 0x38            // I2C address
-#define FT6236_REG_NUMTOUCHES 0x02  // Number of touch points
-
-#define FT6236_REG_VENDID 0xA8  // Vendor ID register
-#define FT6236_VENDID 0x11      // Expected Vendor ID
-
-#define FT6236_REG_CHIPID 0xA3  // Chip ID register
-#define FT6236_CHIPID 0x36      // FT6236 Chip ID
-#define FT6236U_CHIPID 0x64     // FT6236U Chip ID
-#define FT6206_CHIPID 0x06      // FT6206 Chip ID
+using namespace touchscreen;
 
 class TS_Point {
  public:
@@ -81,8 +73,7 @@ class FT6236Touchscreen : public Component, public i2c::I2CDevice {
   uint32_t interval_;  // For update interval
   void* display_;  // For display interaction (if applicable)
   Trigger<> update_trigger_;  // Event trigger for updates
-  lvgl::LVTouchListener* lvgl_listener_;  // LVGL listener for touch events
-};
+  
 
 }  // namespace ft6236
 }  // namespace esphome

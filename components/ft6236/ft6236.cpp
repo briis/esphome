@@ -21,25 +21,37 @@ MIT license, all text above must be included in any redistribution
 namespace esphome {
 namespace ft6236 {
 
-static const char *TAG = "ft6236";
+  static const uint8_t FT6236_ADDR = 0x38;        // I2C address
+  static const uint8_t FT6236_REG_NUMTOUCHES = 0x02; // Number of touch points
+  static const uint8_t FT6236_REG_VENDID = 0xA8; // Vendor ID register
+  static const uint8_t FT6236_VENDID = 0x11;       // Expected Vendor ID
+  static const uint8_t FT6236_REG_CHIPID = 0xA3; // Chip ID register
+  static const uint8_t FT6236_CHIPID = 0x36;     // FT6236 Chip ID
+  static const uint8_t FT6236U_CHIPID = 0x64;    // FT6236U Chip ID
+  static const uint8_t FT6206_CHIPID = 0x06;     // FT6206 Chip ID
 
-FT6236Touchscreen::FT6236Touchscreen(void) : interval_(1000), display_(nullptr), listener_(nullptr) { touches = 0; }
+  static const char *TAG = "ft6236";
 
-void FT6236Touchscreen::setup() {
-  ESP_LOGCONFIG(TAG, "Setting up FT6236...");
+  FT6236Touchscreen::FT6236Touchscreen(void) : interval_(1000), display_(nullptr), listener_(nullptr) { touches = 0; }
 
-  // Initialize the I2C device, check the chip ID and vendor ID
-  if (readRegister8(FT6236_REG_VENDID) != FT6236_VENDID) {
-    ESP_LOGE(TAG, "Failed to find FT6236, wrong vendor ID.");
-    mark_failed();
-    return;
-  }
+  void FT6236Touchscreen::setup()
+  {
+    ESP_LOGCONFIG(TAG, "Setting up FT6236...");
 
-  uint8_t id = readRegister8(FT6236_REG_CHIPID);
-  if (id != FT6236_CHIPID && id != FT6236U_CHIPID && id != FT6206_CHIPID) {
-    ESP_LOGE(TAG, "Wrong chip ID: 0x%02X", id);
-    mark_failed();
-  }
+    // Initialize the I2C device, check the chip ID and vendor ID
+    if (readRegister8(FT6236_REG_VENDID) != FT6236_VENDID)
+    {
+      ESP_LOGE(TAG, "Failed to find FT6236, wrong vendor ID.");
+      mark_failed();
+      return;
+    }
+
+    uint8_t id = readRegister8(FT6236_REG_CHIPID);
+    if (id != FT6236_CHIPID && id != FT6236U_CHIPID && id != FT6206_CHIPID)
+    {
+      ESP_LOGE(TAG, "Wrong chip ID: 0x%02X", id);
+      mark_failed();
+    }
 }
 
 void FT6236Touchscreen::loop() {
