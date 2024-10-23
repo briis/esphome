@@ -35,7 +35,7 @@
 namespace esphome {
 namespace waveshare_epaper {
 
-static const char *const TAG = "waveshare_4.2b-v2";
+static const char *const TAG = "waveshare_4.2bv2";
 
 void WaveshareEPaper4P2In2bV2::display() {
   ESP_LOGD(TAG, "Performing full update");
