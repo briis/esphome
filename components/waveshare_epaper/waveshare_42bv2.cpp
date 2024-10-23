@@ -56,7 +56,7 @@ void WaveshareEPaper4P2In2bV2::full_update_() {
   this->write_array(this->buffer_, this->get_buffer_length_());
   this->end_data_();
 
-  this->turn_on_display_full_();
+//  this->turn_on_display_full_();
 
   this->deep_sleep();
 }
