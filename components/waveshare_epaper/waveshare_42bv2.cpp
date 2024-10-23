@@ -146,7 +146,7 @@ void WaveshareEPaper4P2In2bV2::fast_initialize_() {
   }
 
   this->clear_();
-  this->turn_on_display_full_();
+//   this->turn_on_display_full_();
 }
 
 void WaveshareEPaper4P2In2bV2::initialize() {
