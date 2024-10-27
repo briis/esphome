@@ -13,13 +13,13 @@
  static const uint8_t FT6236_ADDR_TD_STATUS = 0x02;
  static const uint8_t FT6236_ADDR_TOUCH1_STATE = 0x03;
  static const uint8_t FT6236_ADDR_TOUCH1_X = 0x04;
- static const uint8_t FT6236_ADDR_TOUCH1_ID = 0x05;
+ static const uint8_t FT6236_ADDR_TOUCH1_ID = 0x06;
  static const uint8_t FT6236_ADDR_TOUCH1_Y = 0x06;
  static const uint8_t FT6236_ADDR_TOUCH1_WEIGHT = 0x07;
  static const uint8_t FT6236_ADDR_TOUCH1_MISC = 0x08;
  static const uint8_t FT6236_ADDR_THRESHHOLD = 0x80;
  static const uint8_t FT6236_ADDR_TOUCHRATE_ACTIVE = 0x88;
- static const uint8_t FT6236_ADDR_CHIP_ID = 0x64;
+ static const uint8_t FT6236_ADDR_CHIP_ID = 0xA3;
  
  static const char *const TAG = "FT6236";
  
