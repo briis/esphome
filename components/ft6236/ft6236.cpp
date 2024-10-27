@@ -1,112 +1,130 @@
-/*
-This is a library for the FT6236 touchscreen controller by FocalTech.
-
-The FT6236 and FT6236u work the same way.
-
-A lot of this library is originally written by Limor Fried/Ladyada.
-
-Because Adafruit invests time and resources providing this open source code,
-please support Adafruit and open-source hardware by purchasing
-products from Adafruit!
-
-@section author Author
-Written by Limor Fried/Ladyada for Adafruit Industries.
-
-@section license License
-MIT license, all text above must be included in any redistribution
-*/
-#include "ft6236.h"
-#include "esphome/core/log.h"
-
-namespace esphome {
-namespace ft6236 {
-
-  static const uint8_t FT6236_ADDR = 0x38;        // I2C address
-  static const uint8_t FT6236_REG_NUMTOUCHES = 0x02; // Number of touch points
-  static const uint8_t FT6236_REG_VENDID = 0xA8; // Vendor ID register
-  static const uint8_t FT6236_VENDID = 0x11;       // Expected Vendor ID
-  static const uint8_t FT6236_REG_CHIPID = 0xA3; // Chip ID register
-  static const uint8_t FT6236_CHIPID = 0x36;     // FT6236 Chip ID
-  static const uint8_t FT6236U_CHIPID = 0x64;    // FT6236U Chip ID
-  static const uint8_t FT6206_CHIPID = 0x06;     // FT6206 Chip ID
-
-  static const char *TAG = "ft6236";
-
-  FT6236Touchscreen::FT6236Touchscreen(void) : interval_(1000), display_(nullptr), listener_(nullptr) { touches = 0; }
-
-  void FT6236Touchscreen::setup()
-  {
-    ESP_LOGCONFIG(TAG, "Setting up FT6236...");
-
-    // Initialize the I2C device, check the chip ID and vendor ID
-    if (readRegister8(FT6236_REG_VENDID) != FT6236_VENDID)
-    {
-      ESP_LOGE(TAG, "Failed to find FT6236, wrong vendor ID.");
-      mark_failed();
-      return;
-    }
-
-    uint8_t id = readRegister8(FT6236_REG_CHIPID);
-    if (id != FT6236_CHIPID && id != FT6236U_CHIPID && id != FT6206_CHIPID)
-    {
-      ESP_LOGE(TAG, "Wrong chip ID: 0x%02X", id);
-      mark_failed();
-    }
-}
-
-void FT6236Touchscreen::loop() {
-  uint8_t n = touched();
-  if (n > 0) {
-    TS_Point point = getPoint(0);
-    ESP_LOGD(TAG, "Touch at: X=%d, Y=%d", point.x, point.y);
-    if (this->listener_) {
-      this->listener_();  // Trigger the listener if touch detected
-    }
-  }
-}
-
-uint8_t FT6236Touchscreen::touched(void) {
-  uint8_t n = readRegister8(FT6236_REG_NUMTOUCHES);
-  if (n > 2) {
-    n = 0;
-  }
-  return n;
-}
-
-TS_Point FT6236Touchscreen::getPoint(uint8_t n) {
-  readData();
-  if (touches == 0 || n > 1) {
-    return TS_Point(0, 0, 0);
-  }
-  return TS_Point(touchX[n], touchY[n], 1);
-}
-
-void FT6236Touchscreen::readData(void) {
-  uint8_t data[16];
-  this->read_bytes(0x00, data, 16);
-
-  touches = data[2] & 0x0F;
-
-  if (touches > 0) {
-    touchX[0] = ((data[3] & 0x0F) << 8) | data[4];
-    touchY[0] = ((data[5] & 0x0F) << 8) | data[6];
-  }
-}
-
-void FT6236Touchscreen::writeRegister8(uint8_t reg, uint8_t val) {
-  this->write_byte(reg, val);
-}
-
-uint8_t FT6236Touchscreen::readRegister8(uint8_t reg) {
-  uint8_t val;
-  this->read_bytes(reg, &val, 1);
-  return val;
-}
-
-void FT6236Touchscreen::dump_config() {
-  ESP_LOGCONFIG(TAG, "FT6236:");
-  ESP_LOGCONFIG(TAG, "  I2C Address: 0x38");
-}
-
-}  // namespace ft6236
-}  // namespace esphome
+/**************************************************************************/
+ /**************************************************************************/
+ 
+ #include "ft6236.h"
+ #include "esphome/core/log.h"
+ 
+ // Registers
+ // Reference: https://focuslcds.com/content/FT6236.pdf
+ namespace esphome {
+ namespace ft6236 {
+ static const uint8_t FT6236_ADDR_DEVICE_MODE = 0x00;
+ 
+ static const uint8_t FT6236_ADDR_TD_STATUS = 0x02;
+ static const uint8_t FT6236_ADDR_TOUCH1_STATE = 0x03;
+ static const uint8_t FT6236_ADDR_TOUCH1_X = 0x03;
+ static const uint8_t FT6236_ADDR_TOUCH1_ID = 0x05;
+ static const uint8_t FT6236_ADDR_TOUCH1_Y = 0x05;
+ static const uint8_t FT6236_ADDR_TOUCH1_WEIGHT = 0x07;
+ static const uint8_t FT6236_ADDR_TOUCH1_MISC = 0x08;
+ static const uint8_t FT6236_ADDR_THRESHHOLD = 0x80;
+ static const uint8_t FT6236_ADDR_TOUCHRATE_ACTIVE = 0x88;
+ static const uint8_t FT6236_ADDR_CHIP_ID = 0xA3;
+ 
+ static const char *const TAG = "FT6236";
+ 
+ void FT6236Touchscreen::setup() {
+   ESP_LOGCONFIG(TAG, "Setting up FT6236 Touchscreen...");
+   if (this->interrupt_pin_ != nullptr) {
+     this->interrupt_pin_->pin_mode(gpio::FLAG_INPUT | gpio::FLAG_PULLUP);
+     this->interrupt_pin_->setup();
+     this->attach_interrupt_(this->interrupt_pin_, gpio::INTERRUPT_ANY_EDGE);
+   }
+ 
+   if (this->reset_pin_ != nullptr) {
+     this->reset_pin_->setup();
+     this->hard_reset_();
+   }
+ 
+   // Get touch resolution
+   if (this->x_raw_max_ == this->x_raw_min_) {
+     this->x_raw_max_ = 320;
+   }
+   if (this->y_raw_max_ == this->y_raw_min_) {
+     this->y_raw_max_ = 480;
+   }
+   uint8_t chip_id = this->read_byte_(FT6236_ADDR_CHIP_ID);
+   if (chip_id != 0) {
+     ESP_LOGI(TAG, "FT6236U touch driver started chipid: %d", chip_id);
+   } else {
+     ESP_LOGE(TAG, "FT6236U touch driver failed to start");
+   }
+   this->write_byte(FT6236_ADDR_DEVICE_MODE, 0x00);
+   this->write_byte(FT6236_ADDR_THRESHHOLD, this->threshold_);
+   this->write_byte(FT6236_ADDR_TOUCHRATE_ACTIVE, 0x0E);
+ }
+ 
+ void FT6236Touchscreen::hard_reset_() {
+   if (this->reset_pin_ != nullptr) {
+     this->reset_pin_->digital_write(false);
+     delay(10);
+     this->reset_pin_->digital_write(true);
+   }
+ }
+ 
+ void FT6236Touchscreen::dump_config() {
+   ESP_LOGCONFIG(TAG, "FT6236 Touchscreen:");
+   LOG_I2C_DEVICE(this);
+   LOG_PIN("  Interrupt Pin: ", this->interrupt_pin_);
+   LOG_PIN("  Reset Pin: ", this->reset_pin_);
+   LOG_UPDATE_INTERVAL(this);
+ }
+ 
+ void FT6236Touchscreen::update_touches() {
+   uint16_t touch_id, x, y;
+ 
+   uint8_t touches = this->read_touch_number_();
+   ESP_LOGV(TAG, "Touches found: %d", touches);
+   if ((touches == 0x00) || (touches == 0xff)) {
+     // ESP_LOGD(TAG, "No touches detected");
+     return;
+   }
+ 
+   for (auto point = 0; point < touches; point++) {
+     if (((this->read_touch_event_(point)) & 0x01) == 0) {  // checking event flag bit 6 if it is null
+       touch_id = this->read_touch_id_(point);              // id1 = 0 or 1
+       x = this->read_touch_x_(point);
+       y = this->read_touch_y_(point);
+       if ((x == 0) && (y == 0)) {
+         ESP_LOGW(TAG, "Reporting a (0,0) touch on %d", touch_id);
+       }
+       this->add_raw_touch_position_(touch_id, x, y, this->read_touch_weight_(point));
+     }
+   }
+ }
+ 
+ uint8_t FT6236Touchscreen::read_touch_number_() { return this->read_byte_(FT6236_ADDR_TD_STATUS) & 0x0F; }
+ // Touch 1 functions
+ uint16_t FT6236Touchscreen::read_touch_x_(uint8_t touch) {
+   uint8_t read_buf[2];
+   read_buf[0] = this->read_byte_(FT6236_ADDR_TOUCH1_X + (touch * 6));
+   read_buf[1] = this->read_byte_(FT6236_ADDR_TOUCH1_X + 1 + (touch * 6));
+   return ((read_buf[0] & 0x0f) << 8) | read_buf[1];
+ }
+ uint16_t FT6236Touchscreen::read_touch_y_(uint8_t touch) {
+   uint8_t read_buf[2];
+   read_buf[0] = this->read_byte_(FT6236_ADDR_TOUCH1_Y + (touch * 6));
+   read_buf[1] = this->read_byte_(FT6236_ADDR_TOUCH1_Y + 1 + (touch * 6));
+   return ((read_buf[0] & 0x0f) << 8) | read_buf[1];
+ }
+ uint8_t FT6236Touchscreen::read_touch_event_(uint8_t touch) {
+   return this->read_byte_(FT6236_ADDR_TOUCH1_X + (touch * 6)) >> 6;
+ }
+ uint8_t FT6236Touchscreen::read_touch_id_(uint8_t touch) {
+   return this->read_byte_(FT6236_ADDR_TOUCH1_ID + (touch * 6)) >> 4;
+ }
+ uint8_t FT6236Touchscreen::read_touch_weight_(uint8_t touch) {
+   return this->read_byte_(FT6236_ADDR_TOUCH1_WEIGHT + (touch * 6));
+ }
+ uint8_t FT6236Touchscreen::read_touch_misc_(uint8_t touch) {
+   return this->read_byte_(FT6236_ADDR_TOUCH1_MISC + (touch * 6)) >> 4;
+ }
+ 
+ uint8_t FT6236Touchscreen::read_byte_(uint8_t addr) {
+   uint8_t byte = 0;
+   this->read_byte(addr, &byte);
+   return byte;
+ }
+ 
+ }  // namespace ft6236
+ }  // namespace esphome
