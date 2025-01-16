@@ -12,7 +12,7 @@
  
  using namespace touchscreen;
  
- static const uint8_t FT6X36_DEFAULT_THRESHOLD = 22;
+ static const uint8_t FT6X36_DEFAULT_THRESHOLD = 128;
  
  class FT6236Touchscreen : public Touchscreen, public i2c::I2CDevice {
   public:
