@@ -21,9 +21,9 @@
  static const uint8_t FT6X36_ADDR_TOUCHRATE_ACTIVE = 0x88;
  static const uint8_t FT63X6_ADDR_CHIP_ID = 0xA3;
  
- static const char *const TAG = "FT63X6";
+ static const char *const TAG = "FT6236";
  
- void FT63X6Touchscreen::setup() {
+ void FT6236Touchscreen::setup() {
    ESP_LOGCONFIG(TAG, "Setting up FT63X6 Touchscreen...");
    if (this->interrupt_pin_ != nullptr) {
      this->interrupt_pin_->pin_mode(gpio::FLAG_INPUT | gpio::FLAG_PULLUP);
@@ -54,7 +54,7 @@
    this->write_byte(FT6X36_ADDR_TOUCHRATE_ACTIVE, 0x0E);
  }
  
- void FT63X6Touchscreen::hard_reset_() {
+ void FT6236Touchscreen::hard_reset_() {
    if (this->reset_pin_ != nullptr) {
      this->reset_pin_->digital_write(false);
      delay(10);
@@ -62,15 +62,15 @@
    }
  }
  
- void FT63X6Touchscreen::dump_config() {
-   ESP_LOGCONFIG(TAG, "FT63X6 Touchscreen:");
+ void FT6236Touchscreen::dump_config() {
+   ESP_LOGCONFIG(TAG, "FT6236 Touchscreen:");
    LOG_I2C_DEVICE(this);
    LOG_PIN("  Interrupt Pin: ", this->interrupt_pin_);
    LOG_PIN("  Reset Pin: ", this->reset_pin_);
    LOG_UPDATE_INTERVAL(this);
  }
  
- void FT63X6Touchscreen::update_touches() {
+ void FT6236Touchscreen::update_touches() {
    uint16_t touch_id, x, y;
  
    uint8_t touches = this->read_touch_number_();
@@ -93,34 +93,34 @@
    }
  }
  
- uint8_t FT63X6Touchscreen::read_touch_number_() { return this->read_byte_(FT63X6_ADDR_TD_STATUS) & 0x0F; }
+ uint8_t FT6236Touchscreen::read_touch_number_() { return this->read_byte_(FT63X6_ADDR_TD_STATUS) & 0x0F; }
  // Touch 1 functions
- uint16_t FT63X6Touchscreen::read_touch_x_(uint8_t touch) {
+ uint16_t FT6236Touchscreen::read_touch_x_(uint8_t touch) {
    uint8_t read_buf[2];
    read_buf[0] = this->read_byte_(FT63X6_ADDR_TOUCH1_X + (touch * 6));
    read_buf[1] = this->read_byte_(FT63X6_ADDR_TOUCH1_X + 1 + (touch * 6));
    return ((read_buf[0] & 0x0f) << 8) | read_buf[1];
  }
- uint16_t FT63X6Touchscreen::read_touch_y_(uint8_t touch) {
+ uint16_t FT6236Touchscreen::read_touch_y_(uint8_t touch) {
    uint8_t read_buf[2];
    read_buf[0] = this->read_byte_(FT63X6_ADDR_TOUCH1_Y + (touch * 6));
    read_buf[1] = this->read_byte_(FT63X6_ADDR_TOUCH1_Y + 1 + (touch * 6));
    return ((read_buf[0] & 0x0f) << 8) | read_buf[1];
  }
- uint8_t FT63X6Touchscreen::read_touch_event_(uint8_t touch) {
+ uint8_t FT6236Touchscreen::read_touch_event_(uint8_t touch) {
    return this->read_byte_(FT63X6_ADDR_TOUCH1_X + (touch * 6)) >> 6;
  }
- uint8_t FT63X6Touchscreen::read_touch_id_(uint8_t touch) {
+ uint8_t FT6236Touchscreen::read_touch_id_(uint8_t touch) {
    return this->read_byte_(FT63X6_ADDR_TOUCH1_ID + (touch * 6)) >> 4;
  }
- uint8_t FT63X6Touchscreen::read_touch_weight_(uint8_t touch) {
+ uint8_t FT6236Touchscreen::read_touch_weight_(uint8_t touch) {
    return this->read_byte_(FT63X6_ADDR_TOUCH1_WEIGHT + (touch * 6));
  }
- uint8_t FT63X6Touchscreen::read_touch_misc_(uint8_t touch) {
+ uint8_t FT6236Touchscreen::read_touch_misc_(uint8_t touch) {
    return this->read_byte_(FT63X6_ADDR_TOUCH1_MISC + (touch * 6)) >> 4;
  }
  
- uint8_t FT63X6Touchscreen::read_byte_(uint8_t addr) {
+ uint8_t FT6236Touchscreen::read_byte_(uint8_t addr) {
    uint8_t byte = 0;
    this->read_byte(addr, &byte);
    return byte;
