@@ -1,4 +1,4 @@
- /**************************************************************************/
+/**************************************************************************/
  /**************************************************************************/
  
  #pragma once
@@ -12,9 +12,9 @@
  
  using namespace touchscreen;
  
- static const uint8_t FT6X36_DEFAULT_THRESHOLD = 128;
+ static const uint8_t FT6236_DEFAULT_THRESHOLD = 80;
  
- class FT6236Touchscreen : public Touchscreen, public i2c::I2CDevice {
+ class FT63X6Touchscreen : public Touchscreen, public i2c::I2CDevice {
   public:
    void setup() override;
    void dump_config() override;
@@ -29,7 +29,7 @@
  
    InternalGPIOPin *interrupt_pin_{nullptr};
    GPIOPin *reset_pin_{nullptr};
-   uint8_t threshold_{FT6X36_DEFAULT_THRESHOLD};
+   uint8_t threshold_{FT6236_DEFAULT_THRESHOLD};
  
    uint8_t read_touch_number_();
  
