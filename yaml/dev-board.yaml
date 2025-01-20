@@ -1,0 +1,363 @@
+substitutions:
+  name: "Development Board"
+  device: "dev-board"
+  
+esphome:
+  name: "${device}"
+  friendly_name: "${name}"
+  min_version: 2024.12.2
+  platformio_options:
+    board_build.flash_mode: dio
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    version: recommended
+    sdkconfig_options:
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: "y"
+      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
+      CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB: "y"
+      CONFIG_ESP32_S3_BOX_BOARD: "y"
+      CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY: "y"
+
+      CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
+
+      # Settings based on https://github.com/espressif/esp-adf/issues/297#issuecomment-783811702
+      CONFIG_ESP32_WIFI_STATIC_RX_BUFFER_NUM: "16"
+      CONFIG_ESP32_WIFI_DYNAMIC_RX_BUFFER_NUM: "512"
+      CONFIG_ESP32_WIFI_STATIC_TX_BUFFER: "y"
+      CONFIG_ESP32_WIFI_TX_BUFFER_TYPE: "0"
+      CONFIG_ESP32_WIFI_STATIC_TX_BUFFER_NUM: "8"
+      CONFIG_ESP32_WIFI_CACHE_TX_BUFFER_NUM: "32"
+      CONFIG_ESP32_WIFI_AMPDU_TX_ENABLED: "y"
+      CONFIG_ESP32_WIFI_TX_BA_WIN: "16"
+      CONFIG_ESP32_WIFI_AMPDU_RX_ENABLED: "y"
+      CONFIG_ESP32_WIFI_RX_BA_WIN: "32"
+      CONFIG_LWIP_MAX_ACTIVE_TCP: "16"
+      CONFIG_LWIP_MAX_LISTENING_TCP: "16"
+      CONFIG_TCP_MAXRTX: "12"
+      CONFIG_TCP_SYNMAXRTX: "6"
+      CONFIG_TCP_MSS: "1436"
+      CONFIG_TCP_MSL: "60000"
+      CONFIG_TCP_SND_BUF_DEFAULT: "65535"
+      CONFIG_TCP_WND_DEFAULT: "65535"  # Adjusted from linked settings to avoid compilation error
+      CONFIG_TCP_RECVMBOX_SIZE: "512"
+      CONFIG_TCP_QUEUE_OOSEQ: "y"
+      CONFIG_TCP_OVERSIZE_MSS: "y"
+      CONFIG_LWIP_WND_SCALE: "y"
+      CONFIG_TCP_RCV_SCALE: "3"
+      CONFIG_LWIP_TCPIP_RECVMBOX_SIZE: "512"
+
+      CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"  # TLS1.3 support isn't enabled by default in IDF 5.1.5
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "z6PW3j3TaaByRmiwbbJrQL/dHrxoJKscRxEB6EVZqcs="
+
+ota:
+  - platform: esphome
+    password: "a0d977c329a8d5b48d83c9aca18f8beb"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Dev-Board Fallback Hotspot"
+    password: "OqAf8mBmOD1j"
+
+captive_portal:
+
+http_request:
+  id: http_request_data
+  verify_ssl: true
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Copenhagen
+
+web_server:
+
+globals:
+  - id: supplier_id
+    type: std::string
+    restore_value: False
+
+  - id: transporter_id
+    type: std::string
+    restore_value: False
+
+  - id: report_date
+    type: std::string
+    restore_value: False
+
+  - id: prices
+    type: float[48]
+    restore_value: False
+
+  - id: priceHigh
+    type: double
+    restore_value: False
+
+  - id: priceLow
+    type: double
+    restore_value: False
+
+  - id: priceCurrent
+    type: double
+    restore_value: False
+
+  - id: price_data_loaded
+    type: bool
+    restore_value: False
+    initial_value: "false"
+
+  - id: tomorrow_data_valid
+    type: bool
+    restore_value: False
+    initial_value: "false"
+
+  - id: config_file_found
+    type: bool
+    restore_value: False
+    initial_value: "true"
+
+
+#############################################
+###             BUTTONS                   ###
+#############################################
+button:
+  - platform: template
+    id: btn_load_prices
+    name: "Hent Priser"
+    on_press: 
+      then:
+        script.execute: get_energy_prices
+  - platform: template
+    id: btn_load_config
+    name: "Hent Konfiguration"
+    on_press: 
+      then:
+        script.execute: get_configuration
+
+script:
+    ### GET THE CONFIGURATION FILE FOR THE DEVICE ###
+  - id: get_configuration
+    then:
+      - http_request.get:
+          url: !lambda |-
+            return ((std::string) esphome::to_string("https://strom.briis.com/api/get_configuration/" + id(mac_address).state));
+          capture_response: True
+          headers:
+            Content-Type: application/json
+          max_response_buffer_size: 300
+          on_response:
+            then:
+              - if:
+                  condition:
+                    lambda: return response->status_code == 200;
+                  then:
+                    - lambda: |-
+                        json::parse_json(body, [](JsonObject elem) -> bool {
+                          if (elem["price_area"]) {
+                            if (elem["mac_address"] == "Not Found") {
+                              id(config_file_found) = false;
+                              ESP_LOGD("error","Config file not found!");
+                            } else {
+                              std::string price_area_data = elem["price_area"];
+                              std::string supplier_data = elem["supplier_name"];
+                              std::string transporter_data = elem["transporter_name"];
+                              std::string supplier_id_data = elem["supplier"];
+                              std::string transporter_id_data = elem["transporter"];
+                              std::string brightness_day_data = elem["brightness_day"];
+                              std::string brightness_night_data = elem["brightness_night"];
+                              if (supplier_data.c_str() == "Not Found") {
+                                id(price_area).publish_state("Gå til https://strom.briis.com for at konfigurere enheden");
+                              } else {
+                                id(price_area).publish_state(price_area_data.c_str());
+                                id(supplier).publish_state(supplier_data.c_str());
+                                id(supplier_id)= supplier_id_data.c_str();
+                                id(transporter).publish_state(transporter_data.c_str());
+                                id(transporter_id) = transporter_id_data.c_str();
+                              }
+                              id(config_file_found) = true;
+                            }
+                          } else {
+                            ESP_LOGD("information","Not valid json data!");
+                          }
+                          return true;
+                        });
+                  else:
+                    - lambda: |-
+                        id(config_file_found) = false;
+                    - logger.log:
+                        format: "Error: Response status: %d, message %s"
+                        args: ["response->status_code", "body.c_str()"]
+          on_error:
+            then:
+              - logger.log: "Kan ikke finde konfigurations filen"
+              - lambda: |-
+                  id(config_file_found) = false;
+
+  ### GET THE PRICE ARRAY FROM STROMLIGNING ###
+  - id: get_energy_prices
+    then:
+      - lambda: |-
+          // SET THE REPORT DATE IN THE CORRECT FORMAT
+          std::time_t now = std::time(nullptr);
+          std::tm tm = *std::gmtime(&now);
+          tm.tm_hour = 0;
+          tm.tm_min = 0;
+          tm.tm_sec = 0;
+          std::time_t startOfDay = std::mktime(&tm);
+          char buffer[30];
+          std::strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%S.000Z", std::gmtime(&startOfDay));
+          id(report_date) = std::string(buffer);
+          // ESP_LOGD("information","REPORT DATE: %s", id(report_date).c_str());
+      - http_request.get:
+          url: !lambda |-
+            return ((std::string) esphome::to_string("https://data.briis.com/stromdata.json"));
+          capture_response: True
+          headers:
+            Content-Type: application/json
+          max_response_buffer_size: 60000
+          on_response:
+            then:
+              - lambda: |-
+                  id(price_data_loaded) = false;
+                  id(tomorrow_data_valid) = false;
+              - if:
+                  condition:
+                    lambda: return response->status_code == 200;
+                  then:
+                    - lambda: |-
+                        json::parse_json(body, [](JsonObject elem) -> bool {
+                          if (elem["prices"]) {
+                            JsonArray priceArray = elem["prices"];
+                            int array_size = priceArray.size();
+                            bool tomorrow_valid = array_size > 24;
+                            id(tomorrow_data_valid) = tomorrow_valid;
+                            int current_hour = id(sntp_time).now().hour;
+                            // LOAD PRICES AND STORE THEM IN THE prices ARRAY
+                            for (int i = 0; i < 24; i++) {
+                              int item_hour = std::stoi(std::string(priceArray[i]["date"]).substr(11, 2));
+                              if (item_hour == 23) { item_hour = 0;} else { item_hour +=1;}
+                              if (item_hour < current_hour) {
+                                if (tomorrow_valid) {
+                                  id(prices)[i] = priceArray[i + 24]["price"]["total"];
+                                } else {
+                                  id(prices)[i] = priceArray[i]["price"]["total"];
+                                }
+                              } else {
+                                id(prices)[i] = priceArray[i]["price"]["total"];
+                              }                              
+                              // ESP_LOGD("information","PRICE: %.2f , HOUR: %d", id(prices)[i], item_hour);
+                            }
+                            // CALCULATE THE HIGHEST AND LOWEST PRICE AND TIME
+                            id(priceLow) = id(prices)[0];
+                            for (int i = 1; i < 24; i++) {
+                                if (id(prices)[i] < id(priceLow)) {
+                                    id(priceLow) = id(prices)[i];
+                                    std::string lowIdx = std::to_string(i);
+                                    if (lowIdx.length() == 1) { lowIdx = "0" + lowIdx;}
+                                    id(priceLowTimeText).publish_state(lowIdx);
+                                }
+                            }
+                            id(priceHigh) = id(prices)[0];
+                            for (int i = 1; i < 24; i++) {
+                                if (id(prices)[i] > id(priceHigh)) {
+                                    id(priceHigh) = id(prices)[i];
+                                    std::string highIdx = std::to_string(i);
+                                    if (highIdx.length() == 1) { highIdx = "0" + highIdx;}
+                                    id(priceHighTimeText).publish_state(highIdx);
+                                }
+                            }
+                            // FINALIZE READ
+                            id(priceCurrent) = id(prices)[id(sntp_time).now().hour];
+                            id(price_data_loaded) = true;
+                            ESP_LOGD("information","Strøm priser opdateret");
+                          } else {
+                            ESP_LOGD("information","Not valid json data!");
+                          }
+                          ESP_LOGD("information","PRICE LOW: %.2f TID: %s , PRICE HIGH: %.2f TID: %s , PRICE NOW: %.2f", id(priceLow), id(priceLowTimeText).state.c_str(), id(priceHigh), id(priceHighTimeText).state.c_str(), id(priceCurrent));
+                          return true;
+                        });
+                  else:
+                    - logger.log:
+                        format: "Error: Response status: %d, message %s"
+                        args: ["response->status_code", "body.c_str()"]
+
+#############################################
+###              TEXT SENSOR              ###
+#############################################
+text_sensor:
+  - platform: wifi_info
+    mac_address:
+      name: "MAC Adresse"
+      id: mac_address
+      icon: mdi:information-slab-circle-outline
+    ip_address:
+      name: "IP Adresse"
+      id: ip_address
+      icon: mdi:ip-network
+  - platform: template
+    id: mac_str
+    name: "MAC Adresse Text"
+    internal: True
+    update_interval: never
+
+  - platform: template
+    id: price_area
+    name: "Pris område"
+    icon: mdi:map
+    update_interval: never
+  - platform: template
+    id: transporter
+    name: "Net Transportør"
+    icon: mdi:transmission-tower-import
+    update_interval: never
+  - platform: template
+    id: supplier
+    name: "El Leverandør"
+    icon: mdi:meter-electric
+    update_interval: never
+
+  - platform: template
+    id: priceLowTimeText
+    name: "Lavest pris tid"
+    internal: True
+    update_interval: never
+    filters: 
+      - lambda: |-
+          if (x == "") {
+            return esphome::optional<std::string>("00");
+          } else {
+            return x;
+          }
+  - platform: template
+    id: priceHighTimeText
+    name: "Højeste pris tid"
+    internal: True
+    update_interval: never
+    filters: 
+      - lambda: |-
+          if (x == "") {
+            return esphome::optional<std::string>("00");
+          } else {
+            return x;
+          }

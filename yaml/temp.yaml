@@ -1,0 +1,1020 @@
+substitutions:
+  name: "Strømpris Panel"
+  device: "strompris-panel"
+  ssid: "Strompris-Panel"
+  version: "1.0"
+  created_by: "Bjarne Riis"
+
+  home_icon: "\U000F02DC"
+  arrow_left_icon: "\U000F004F"
+  arrow_right_icon: "\U000F0056"
+  check: "\U000F012C"
+  wifi_connected: "\U000F05A9"
+  wifi_disconnected: "\U000F05AA"
+  circle_outline: "\U000F0766"
+  settings: "\U000F08BB"
+  price_current: "\U000F0820"
+  price_low: "\U000F0CDB"
+  price_high: "\U000F0CE1"
+  clock: "\U000F0150"
+  information: "\U000F1C6A"
+
+#############################################
+###            CORE SETTINGS              ###
+###          WAVESHARE 4" Display         ###
+#############################################
+esphome:
+  name: "${device}"
+  friendly_name: "${name}"
+  min_version: 2024.12.2
+  platformio_options:
+    board_build.flash_mode: dio
+  includes: 
+    - utils/generic_functions.h
+    - utils/lvgl_functions.h
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    version: recommended
+    sdkconfig_options:
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: "y"
+      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
+      CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB: "y"
+      CONFIG_ESP32_S3_BOX_BOARD: "y"
+      CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY: "y"
+
+      CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
+
+      # Settings based on https://github.com/espressif/esp-adf/issues/297#issuecomment-783811702
+      CONFIG_ESP32_WIFI_STATIC_RX_BUFFER_NUM: "16"
+      CONFIG_ESP32_WIFI_DYNAMIC_RX_BUFFER_NUM: "512"
+      CONFIG_ESP32_WIFI_STATIC_TX_BUFFER: "y"
+      CONFIG_ESP32_WIFI_TX_BUFFER_TYPE: "1"
+      CONFIG_ESP32_WIFI_STATIC_TX_BUFFER_NUM: "8"
+      CONFIG_ESP32_WIFI_CACHE_TX_BUFFER_NUM: "32"
+      CONFIG_ESP32_WIFI_AMPDU_TX_ENABLED: "y"
+      CONFIG_ESP32_WIFI_TX_BA_WIN: "16"
+      CONFIG_ESP32_WIFI_AMPDU_RX_ENABLED: "y"
+      CONFIG_ESP32_WIFI_RX_BA_WIN: "32"
+      CONFIG_LWIP_MAX_ACTIVE_TCP: "16"
+      CONFIG_LWIP_MAX_LISTENING_TCP: "16"
+      CONFIG_TCP_MAXRTX: "12"
+      CONFIG_TCP_SYNMAXRTX: "6"
+      CONFIG_TCP_MSS: "1436"
+      CONFIG_TCP_MSL: "60000"
+      CONFIG_TCP_SND_BUF_DEFAULT: "65535"
+      CONFIG_TCP_WND_DEFAULT: "65535"  # Adjusted from linked settings to avoid compilation error
+      CONFIG_TCP_RECVMBOX_SIZE: "512"
+      CONFIG_TCP_QUEUE_OOSEQ: "y"
+      CONFIG_TCP_OVERSIZE_MSS: "y"
+      CONFIG_LWIP_WND_SCALE: "y"
+      CONFIG_TCP_RCV_SCALE: "3"
+      CONFIG_LWIP_TCPIP_RECVMBOX_SIZE: "512"
+
+      CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+      CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"  # TLS1.3 support isn't enabled by default in IDF 5.1.5
+
+      CONFIG_LWIP_TCP_SND_BUF_DEFAULT: "5760"
+      CONFIG_LWIP_TCP_WND_DEFAULT: "5760"
+      CONFIG_LWIP_RECVMBOX_SIZE: "64" 
+      CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL: "65536"
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "z6PW3j3TaaByRmiwbbJrQL/dHrxoJKscRxEB6EVZqcs="
+
+ota:
+  - platform: esphome
+    password: "a0d977c329a8d5b48d83c9aca18f8beb"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Dev-Board Fallback Hotspot"
+    password: "OqAf8mBmOD1j"
+  on_connect:
+    then:
+      # - delay: 15s
+      # - script.execute: get_configuration
+      - lvgl.widget.hide: boot_screen
+      - lvgl.label.update:
+          id: lbl_wifi
+          text_color: color_green
+          text: "${wifi_connected}"
+
+captive_portal:
+
+#############################################
+###          GENERAL SETTINGS             ###
+#############################################
+http_request:
+  id: http_request_data
+  verify_ssl: true
+  timeout: 10s
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Copenhagen
+    on_time:
+      # Every Minute
+      - seconds: 0
+        minutes: '*'
+        then:
+          - script.execute: update_current_time
+
+web_server:
+
+
+#############################################
+###               HARDWARE                ###
+#############################################
+spi:
+  clk_pin: GPIO02
+  mosi_pin: GPIO01
+
+i2c:
+  - id: i2c_touch_bus
+    sda: GPIO15
+    scl: GPIO7
+    scan: True
+    frequency: 400kHz
+
+display:
+  - platform: st7701s
+    id: maindisp
+    auto_clear_enabled: false
+    update_interval: never
+    data_rate: 2MHz
+    spi_mode: MODE3
+    color_order: RGB
+    invert_colors: true
+    pclk_frequency: 12MHz
+    pclk_inverted: true
+    show_test_card: false
+    dimensions:
+      width: 480
+      height: 480
+    cs_pin: GPIO42
+    de_pin: GPIO40
+    hsync_pin: GPIO38
+    vsync_pin: GPIO39
+    pclk_pin: GPIO41
+    hsync_back_porch: 40
+    hsync_front_porch: 20
+    hsync_pulse_width: 1
+    vsync_back_porch: 8
+    vsync_front_porch: 4
+    vsync_pulse_width: 1
+    data_pins:
+      red:
+        - GPIO46       #r1
+        - GPIO3        #r2
+        - number: GPIO8      #r3
+          allow_other_uses: false
+        - GPIO18       #r4
+        - GPIO17       #r5
+      green:
+        - GPIO14       #g0
+        - GPIO13       #g1
+        - GPIO12       #g2
+        - GPIO11       #g3
+        - GPIO10       #g4
+        - number: GPIO9     #g5
+          allow_other_uses: false
+      blue:
+        - GPIO5        #b1
+        - GPIO45       #b2
+        - GPIO48       #b3
+        - GPIO47       #b4
+        - GPIO21       #b5
+
+touchscreen:
+  platform: gt911
+  id: gt911_touch
+  i2c_id: i2c_touch_bus
+  display: maindisp
+  interrupt_pin: GPIO16
+  address: 0x14
+
+#############################################
+###             GLOBALS                   ###
+#############################################
+globals:
+  - id: supplier_id
+    type: std::string
+    restore_value: False
+
+  - id: transporter_id
+    type: std::string
+    restore_value: False
+
+  - id: report_date
+    type: std::string
+    restore_value: False
+
+  - id: prices
+    type: float[24]
+    restore_value: False
+
+  - id: priceTimes
+    type: int[24]
+    restore_value: False
+
+  - id: priceHigh
+    type: double
+    restore_value: False
+
+  - id: priceLow
+    type: double
+    restore_value: False
+
+  - id: priceCurrent
+    type: double
+    restore_value: False
+
+  - id: price_data_loaded
+    type: bool
+    restore_value: False
+    initial_value: "false"
+
+  - id: tomorrow_data_valid
+    type: bool
+    restore_value: False
+    initial_value: "false"
+
+  - id: config_file_found
+    type: bool
+    restore_value: False
+    initial_value: "true"
+
+
+#############################################
+###             BUTTONS                   ###
+#############################################
+button:
+  - platform: template
+    id: btn_load_prices
+    name: "Hent Priser"
+    on_press: 
+      then:
+        - script.execute: get_energy_prices
+  - platform: template
+    id: btn_load_config
+    name: "Hent Konfiguration"
+    on_press: 
+      then:
+        - script.execute: get_configuration
+        - script.execute: update_high_low_prices
+  - platform: template
+    id: btn_update_high_low
+    name: "Opdater Høj/Lav"
+    on_press: 
+      then:
+        - script.execute: update_high_low_prices
+
+
+#############################################
+###            COLORS                    ###
+#############################################
+color:
+  - id: color_red
+    red_int: 245
+    green_int: 67
+    blue_int: 54
+    white_int: 0
+  - id: color_amber
+    red_int: 255
+    green_int: 193
+    blue_int: 8
+    white_int: 0
+  - id: color_orange
+    red_int: 255
+    green_int: 152
+    blue_int: 0
+    white_int: 0
+  - id: color_black
+    red_int: 0
+    green_int: 0
+    blue_int: 0
+    white_int: 0
+  - id: color_white
+    red_int: 255
+    green_int: 255
+    blue_int: 255
+    white_int: 0
+  - id: color_green
+    red_int: 76
+    green_int: 175
+    blue_int: 80
+    white_int: 0
+  - id: color_gray
+    red_int: 158
+    green_int: 158
+    blue_int: 158
+    white_int: 0
+  - id: color_disabled
+    red_int: 189
+    green_int: 189
+    blue_int: 189
+    white_int: 0
+  - id: color_bg
+    red_int: 17
+    green_int: 17
+    blue_int: 17
+    white_int: 0
+  - id: color_widget_bg
+    red_int: 28
+    green_int: 28
+    blue_int: 28
+    white_int: 0
+  - id: color_button_bg
+    red_int: 54
+    green_int: 54
+    blue_int: 54
+    white_int: 0
+  - id: color_blue
+    red_int: 32
+    green_int: 151
+    blue_int: 243
+    white_int: 0
+  - id: color_light_blue
+    red_int: 0
+    green_int: 168
+    blue_int: 244
+    white_int: 0  
+  - id: color_light_gray
+    red_int: 225
+    green_int: 225
+    blue_int: 225
+    white_int: 0
+
+#############################################
+###                FONTS                  ###
+#############################################
+font:
+  - file: 
+      type: gfonts
+      family: Montserrat
+    id: font36
+    size: 36
+    bpp: 4
+  - file: 
+      type: gfonts
+      family: Montserrat
+    id: font24
+    bpp: 4
+    size: 24
+    glyphs: '!"%()+=,-_.:&°/[]0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÆØÅ abcdefghijklmnopqrstuvwxyzæøå'
+  - file: 
+      type: gfonts
+      family: Montserrat
+    id: font10
+    bpp: 4
+    size: 10
+    glyphs: '!"%()+=,-_.:&°/[]0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÆØÅ abcdefghijklmnopqrstuvwxyzæøå'
+  - file: 
+      type: gfonts
+      family: Montserrat
+    id: font12
+    bpp: 4
+    size: 12
+    glyphs: '!"%()+=,-_.:&°/[]0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÆØÅ abcdefghijklmnopqrstuvwxyzæøå'
+  - file: 
+      type: gfonts
+      family: Montserrat
+    id: font14
+    bpp: 4
+    size: 14
+    glyphs: '!"%()+=,-_.:&°/[]0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÆØÅ abcdefghijklmnopqrstuvwxyzæøå'
+    extras:
+      - file: 'fonts/materialdesignicons-webfont.ttf'
+        glyphs: [
+          "\U000F0150",
+          ]
+  - file: 
+      type: gfonts
+      family: Montserrat
+    id: font16
+    bpp: 4
+    size: 16
+    glyphs: '!"%()+=,-_.:&°/[]0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÆØÅ abcdefghijklmnopqrstuvwxyzæøå'
+    extras:
+      - file: 'fonts/materialdesignicons-webfont.ttf'
+        glyphs: [
+          "\U000F004B",
+          "\U000F006E",
+          "\U000F012C",
+          "\U000F179B",
+          "\U000F0748",
+          "\U000F1A1B",
+          "\U000F02DC",
+          "\U000F0BB2",
+          "\U000F0BB0",
+          "\U000F0156",
+          "\U000F0C5F", 
+          "\U000f0084",
+          "\U000f0091",
+          "\U000F05A9",
+          "\U000F05AA",
+          "\U000F0766",
+          "\U000F08BB",
+          "\U000F0820",
+          "\U000F0CDB",
+          "\U000F0CE1",
+          "\U000F0150",
+          "\U000F1C6A",
+          "\U000F004F",
+          "\U000F0056",
+          "\U000F033E",
+          "\U000F033F",
+          ]
+  - file: 
+      type: gfonts
+      family: Montserrat
+    id: font20
+    bpp: 4
+    size: 20    
+    glyphs: '!"%()+=,-_.:&°/[]0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÆØÅ abcdefghijklmnopqrstuvwxyzæøå'
+    extras:
+      - file: 'fonts/materialdesignicons-webfont.ttf'
+        glyphs: [
+          "\U000F004B",
+          "\U000F006E",
+          "\U000F012C",
+          "\U000F179B",
+          "\U000F0748",
+          "\U000F1A1B",
+          "\U000F02DC",
+          "\U000F0BB2",
+          "\U000F0BB0",
+          "\U000F0156",
+          "\U000F0C5F", 
+          "\U000f0084",
+          "\U000f0091",
+          "\U000F0766",
+          "\U000F08BB",
+          "\U000F0820",
+          "\U000F0CDB",
+          "\U000F0CE1",
+          "\U000F0150",
+          "\U000F1C6A",
+          "\U000F004F",
+          "\U000F0056",
+          "\U000F033E",
+          "\U000F033F",
+          "\U000F099E",
+          "\U000F068A",
+          "\U000F099D",
+          "\U000F0D43",
+          "\U000F0ECD",
+          "\U000F084F",
+          "\U000F192D",
+          "\U000F1A74",
+          "\U000F18B5",
+          ]
+
+#############################################
+###                  IMAGES               ###
+#############################################
+image:
+  - file: images/esphome-logo.png
+    id: boot_logo
+    resize: 200x200
+    type: RGB565
+    use_transparency: true
+
+#############################################
+###            SCRIPTS                    ###
+#############################################
+script:
+    ### GET THE CONFIGURATION FILE FOR THE DEVICE ###
+  - id: get_configuration
+    then:
+      - http_request.get:
+          url: !lambda |-
+            return ((std::string) esphome::to_string("https://strom.briis.com/api/get_configuration/" + id(mac_address).state));
+          capture_response: True
+          headers:
+            Content-Type: application/json
+          max_response_buffer_size: 300
+          on_response:
+            then:
+              - if:
+                  condition:
+                    lambda: return response->status_code == 200;
+                  then:
+                    - lambda: |-
+                        json::parse_json(body, [](JsonObject elem) -> bool {
+                          if (elem["price_area"]) {
+                            if (elem["mac_address"] == "Not Found") {
+                              id(config_file_found) = false;
+                              ESP_LOGD("error","Config file not found!");
+                            } else {
+                              std::string price_area_data = elem["price_area"];
+                              std::string supplier_data = elem["supplier_name"];
+                              std::string transporter_data = elem["transporter_name"];
+                              std::string supplier_id_data = elem["supplier"];
+                              std::string transporter_id_data = elem["transporter"];
+                              std::string brightness_day_data = elem["brightness_day"];
+                              std::string brightness_night_data = elem["brightness_night"];
+                              if (supplier_data.c_str() == "Not Found") {
+                                id(price_area).publish_state("Gå til https://strom.briis.com for at konfigurere enheden");
+                              } else {
+                                id(price_area).publish_state(price_area_data.c_str());
+                                id(supplier).publish_state(supplier_data.c_str());
+                                id(supplier_id)= supplier_id_data.c_str();
+                                id(transporter).publish_state(transporter_data.c_str());
+                                id(transporter_id) = transporter_id_data.c_str();
+                              }
+                              id(config_file_found) = true;
+                            }
+                          } else {
+                            ESP_LOGD("information","Not valid json data!");
+                          }
+                          return true;
+                        });
+                  else:
+                    - lambda: |-
+                        id(config_file_found) = false;
+                    - logger.log:
+                        format: "Error: Response status: %d, message %s"
+                        args: ["response->status_code", "body.c_str()"]
+          on_error:
+            then:
+              - logger.log: "Kan ikke finde konfigurations filen"
+              - lambda: |-
+                  id(config_file_found) = false;
+
+  ### GET THE PRICE ARRAY FROM STROMLIGNING ###
+  - id: get_energy_prices
+    then:
+      - lambda: |-
+          // SET THE REPORT DATE IN THE CORRECT FORMAT
+          id(report_start_date) = getCurrentHourStart();
+          id(report_end_date) = getTomorrowCurrentTime();
+          ESP_LOGD("information","REPORT START: %s - END: %s", id(report_start_date).c_str(), id(report_end_date).c_str());
+      - http_request.get:
+          url: !lambda |-
+            return ((std::string) esphome::to_string("https://data.briis.com/stromdata.json"));
+          capture_response: True
+          headers:
+            Content-Type: application/json
+          max_response_buffer_size: 90000
+          on_response:
+            then:
+              - lambda: |-
+                  id(price_data_loaded) = false;
+                  id(tomorrow_data_valid) = false;
+              - if:
+                  condition:
+                    lambda: return response->status_code == 200;
+                  then:
+                    - lambda: |-
+                        json::parse_json(body, [](JsonObject elem) -> bool {
+                          if (elem["prices"]) {
+                            size_t array_size = elem["prices"].size();
+                            ESP_LOGD("information","Processing Array data...");
+                            id(tomorrow_data_valid) = array_size > 24;
+                            int current_hour = id(sntp_time).now().hour;
+                            // LOAD PRICES AND STORE THEM IN THE prices ARRAY
+                            for (int i = 0; i < 24; i++) {
+                              int item_hour = std::stoi(std::string(elem["prices"][i]["date"]).substr(11, 2));
+                              if (item_hour == 23) { item_hour = 0;} else { item_hour +=1;}
+                              if (item_hour < current_hour) {
+                                if (id(tomorrow_data_valid)) {
+                                  id(prices)[i] = elem["prices"][i + 24]["price"]["total"];
+                                } else {
+                                  id(prices)[i] = elem["prices"][i]["price"]["total"];
+                                }
+                              } else {
+                                id(prices)[i] = elem["prices"][i]["price"]["total"];
+                              }                              
+                              // ESP_LOGD("information","PRICE: %.2f , HOUR: %d", id(prices)[i], item_hour);
+                            }
+                            // CALCULATE THE HIGHEST AND LOWEST PRICE AND TIME
+                            id(priceLow) = id(prices)[0];
+                            id(priceHigh) = id(prices)[0];
+                            for (int i = 1; i < 24; i++) {
+                                if (id(prices)[i] < id(priceLow)) {
+                                    id(priceLow) = id(prices)[i];
+                                    id(priceLowTimeText).publish_state(formatHighLowTime(i));
+                                }
+                                if (id(prices)[i] > id(priceHigh)) {
+                                    id(priceHigh) = id(prices)[i];
+                                    id(priceHighTimeText).publish_state(formatHighLowTime(i));
+                                }
+                            }
+                            // FINALIZE READ
+                            // Store Current Hour in the prices array
+                            int current_hour = id(sntp_time).now().hour;
+                            for (int i = 0; i < 24; i++) {
+                                if (id(priceTimes)[i] == current_hour) {
+                                    id(priceCurrent) = id(prices)[i];
+                                    break;
+                                }
+                            }
+//                            id(priceCurrent) = id(prices)[id(sntp_time).now().hour];
+                            id(price_data_loaded) = true;
+                            ESP_LOGD("information","Strøm priser opdateret");
+                          } else {
+                            ESP_LOGD("information","Not valid json data!");
+                            return false;
+                          }
+                          ESP_LOGD("information","PRICE LOW: %.2f TID: %s , PRICE HIGH: %.2f TID: %s , PRICE NOW: %.2f", id(priceLow), id(priceLowTimeText).state.c_str(), id(priceHigh), id(priceHighTimeText).state.c_str(), id(priceCurrent));
+                          return true;
+                        });
+                  else:
+                    - logger.log:
+                        format: "Error: Response status: %d, message %s"
+                        args: ["response->status_code", "body.c_str()"]
+
+  ### UPDATE LOW, CURRENT AND HIGH PRICES ###
+  - id: update_high_low_prices
+    then:
+      - lambda: |-
+          if (id(price_data_loaded)) {
+            auto cur_color = getColorFromValue(id(priceLow));
+            lv_obj_set_style_text_color(id(lbl_low_price_symbol), cur_color, static_cast<lv_part_t>(LV_PART_MAIN) | static_cast<lv_state_t>(LV_STATE_DEFAULT));
+            lv_label_set_text_fmt(id(lbl_low_price), "%s kr", formatFloat2d(id(priceLow)).c_str());
+          }
+      - lambda: |-
+          if (id(price_data_loaded)) {
+            auto cur_color = getColorFromValue(id(priceCurrent));
+            lv_obj_set_style_text_color(id(lbl_current_price), cur_color, static_cast<lv_part_t>(LV_PART_MAIN) | static_cast<lv_state_t>(LV_STATE_DEFAULT));
+            lv_obj_set_style_text_color(id(lbl_current_price_symbol), cur_color, static_cast<lv_part_t>(LV_PART_MAIN) | static_cast<lv_state_t>(LV_STATE_DEFAULT));
+            lv_label_set_text_fmt(id(lbl_current_price), "%s kr", formatFloat2d(id(priceCurrent)).c_str());
+          }
+      - lambda: |-
+          if (id(price_data_loaded)) {
+            auto cur_color = getColorFromValue(id(priceHigh));
+            lv_obj_set_style_text_color(id(lbl_high_price_symbol), cur_color, static_cast<lv_part_t>(LV_PART_MAIN) | static_cast<lv_state_t>(LV_STATE_DEFAULT));
+            lv_label_set_text_fmt(id(lbl_high_price), "%s kr", formatFloat2d(id(priceHigh)).c_str());
+          }
+      - lvgl.label.update:
+          id: lbl_low_price_time
+          text: 
+            format: "Kl. %s"
+            args: ["id(priceLowTimeText).state.c_str()"]
+      - lvgl.label.update:
+          id: lbl_high_price_time
+          text: 
+            format: "Kl. %s"
+            args: ["id(priceHighTimeText).state.c_str()"]
+
+  ### DISPLAY TIME AND DATE ON THE INFO PAGE ###
+  - id: update_current_time
+    then:
+      - lvgl.label.update:
+          id: lbl_time
+          text: !lambda |-
+            if (id(sntp_time).now().is_valid()) {
+              return id(sntp_time).now().strftime("%H:%M");
+            } else {
+              return "Invalid Time";
+            }
+
+#############################################
+###              TEXT SENSOR              ###
+#############################################
+text_sensor:
+  - platform: wifi_info
+    mac_address:
+      name: "MAC Adresse"
+      id: mac_address
+      icon: mdi:information-slab-circle-outline
+    ip_address:
+      name: "IP Adresse"
+      id: ip_address
+      icon: mdi:ip-network
+  - platform: template
+    id: mac_str
+    name: "MAC Adresse Text"
+    internal: True
+    update_interval: never
+
+  - platform: template
+    id: price_area
+    name: "Pris område"
+    icon: mdi:map
+    update_interval: never
+  - platform: template
+    id: transporter
+    name: "Net Transportør"
+    icon: mdi:transmission-tower-import
+    update_interval: never
+  - platform: template
+    id: supplier
+    name: "El Leverandør"
+    icon: mdi:meter-electric
+    update_interval: never
+
+  - platform: template
+    id: priceLowTimeText
+    name: "Lavest pris tid"
+    internal: True
+    update_interval: never
+    filters: 
+      - lambda: |-
+          if (x == "") {
+            return esphome::optional<std::string>("00");
+          } else {
+            return x;
+          }
+  - platform: template
+    id: priceHighTimeText
+    name: "Højeste pris tid"
+    internal: True
+    update_interval: never
+    filters: 
+      - lambda: |-
+          if (x == "") {
+            return esphome::optional<std::string>("00");
+          } else {
+            return x;
+          }
+
+#############################################
+###               LVGL                    ###
+#############################################
+lvgl:
+  displays:
+    - maindisp
+  touchscreens:
+    - gt911_touch
+  buffer_size: 100%
+  color_depth: 16
+  default_font: font20
+
+  theme:
+    label:
+      text_font: font16
+      text_color: color_white
+    bar:
+      bg_color: color_gray
+      indicator:
+        bg_color: color_gray
+      width: 10
+      height: 135
+    button:
+      width: 100
+      height: 70
+      bg_color: color_button_bg
+      text_color: color_white
+      border_width: 0
+      outline_width: 0
+      shadow_width: 0
+      pad_all: 0
+      checked:
+        bg_color: color_gray
+    buttonmatrix:
+      bg_color: color_bg
+      border_opa: TRANSP
+      border_width: 0
+      shadow_width: 0      
+      shadow_opa: TRANSP
+      text_font: font20
+      pad_all: 0
+      pad_left: 5
+      pad_right: 5
+      pad_bottom: 5
+      outline_width: 0
+      # outline_opa: TRANSP
+      items:
+        shadow_width: 0
+        border_width: 0
+        outline_width: 0
+        bg_color: color_bg
+        text_color: color_blue
+        pressed:
+          bg_color: color_gray
+
+  style_definitions:
+    - id: main_grid
+      width: 480
+      height: 400
+      x: 0
+      y: 0
+      bg_color: color_bg
+      pad_all: 5
+      border_opa: TRANSP
+    - id: style_header_footer
+      width: 100%
+      height: 40
+      bg_color: color_bg
+      text_font: font24
+      pad_all: 0
+      pad_row: 0
+      pad_column: 5
+      border_opa: TRANSP
+
+  top_layer:
+    widgets:
+      - obj:
+          align: TOP_MID
+          styles: style_header_footer
+          id: top_layer
+          layout:
+            type: grid
+            grid_columns: [fr(1), fr(1), fr(1)]
+            grid_rows: [fr(1)]
+            grid_column_align: CENTER
+            pad_row: 0
+            pad_column: 0
+          widgets:
+            # HEADER
+            - label:
+                id: lbl_time
+                grid_cell_column_pos: 0
+                grid_cell_row_pos: 0
+                grid_cell_x_align: START
+                grid_cell_y_align: CENTER
+                text: " "
+                text_color: color_amber
+            - label:
+                id: lbl_header
+                recolor: true
+                grid_cell_column_pos: 1
+                grid_cell_row_pos: 0
+                grid_cell_x_align: CENTER
+                grid_cell_y_align: CENTER
+                text: "#FFFFFF Strømpris# #00A8F4 Panel# #FFFFFF V${version}#"
+            - label:
+                id: lbl_wifi
+                grid_cell_column_pos: 2
+                grid_cell_row_pos: 0
+                grid_cell_x_align: END
+                grid_cell_y_align: CENTER
+                text: "${wifi_disconnected}"
+                text_color: color_red
+
+      - buttonmatrix:
+          align: BOTTOM_MID
+          styles: style_header_footer
+          id: bottom_layer
+          outline_width: 0
+          rows:
+            - buttons:
+              - id: page_prev
+                text: "${arrow_left_icon}"
+                on_press:
+                  then:
+                    lvgl.page.previous:
+              - id: page_home
+                text: "#FF9800 ${home_icon}#"
+                control:
+                  recolor: true
+                on_press:
+                  then:
+                    lvgl.page.show: lvgl_mainpage
+              - id: page_next
+                text: "${arrow_right_icon}"
+                on_press:
+                  then:
+                    lvgl.page.next:
+      - obj:
+          id: boot_screen
+          x: 0
+          y: 0
+          width: 100%
+          height: 100%
+          bg_color: color_white
+          bg_opa: COVER
+          radius: 0
+          pad_all: 0
+          border_width: 0
+          border_opa: TRANSP
+          widgets:
+            - image:
+                align: CENTER
+                src: boot_logo
+                y: -40
+            - spinner:
+                align: CENTER
+                y: 95
+                height: 50
+                width: 50
+                spin_time: 1s
+                arc_length: 60deg
+                arc_width: 8
+                indicator:
+                  arc_color: 0x18bcf2
+                  arc_width: 8
+          on_press:
+            - lvgl.widget.hide: boot_screen
+
+  pages:
+    - id: lvgl_mainpage
+      bg_color: color_bg
+      pad_all: 0
+      widgets:
+        - obj:
+            align: CENTER
+            styles: main_grid
+            layout:
+              type: grid
+              grid_columns: [fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1)]
+              grid_rows: [20px, 20px, fr(1)]
+              grid_column_align: CENTER
+              grid_row_align: CENTER
+              pad_row: 0
+              pad_column: 0
+            widgets:
+              - label:
+                  id: lbl_low_price
+                  grid_cell_column_pos: 0
+                  grid_cell_row_pos: 0
+                  grid_cell_x_align: CENTER
+                  grid_cell_y_align: CENTER
+                  grid_cell_column_span: 3
+                  text: "0.00 kr"
+                  text_font: font20
+              - label:
+                  id: lbl_low_price_time
+                  grid_cell_column_pos: 0
+                  grid_cell_row_pos: 1
+                  grid_cell_x_align: END
+                  grid_cell_y_align: START
+                  grid_cell_column_span: 2
+                  text: " "
+                  text_color: color_gray
+              - label:
+                  id: lbl_low_price_symbol
+                  grid_cell_column_pos: 2
+                  grid_cell_row_pos: 1
+                  grid_cell_x_align: START
+                  grid_cell_y_align: START
+                  grid_cell_column_span: 1
+                  pad_left: 5
+                  text: "${price_low}"
+                  text_color: color_gray
+              - label:
+                  id: lbl_current_price
+                  grid_cell_column_pos: 3
+                  grid_cell_row_pos: 0
+                  grid_cell_x_align: CENTER
+                  grid_cell_y_align: CENTER
+                  grid_cell_column_span: 3
+                  text: "0.00 kr"
+                  text_font: font20
+              - label:
+                  id: lbl_current_price_time
+                  grid_cell_column_pos: 3
+                  grid_cell_row_pos: 1
+                  grid_cell_x_align: END
+                  grid_cell_y_align: START
+                  grid_cell_column_span: 2
+                  text: "Lige nu"
+                  text_color: color_gray
+              - label:
+                  id: lbl_current_price_symbol
+                  grid_cell_column_pos: 5
+                  grid_cell_row_pos: 1
+                  grid_cell_x_align: START
+                  grid_cell_y_align: START
+                  grid_cell_column_span: 1
+                  pad_left: 5
+                  text: "${price_current}"
+                  text_color: color_gray
+              - label:
+                  id: lbl_high_price
+                  grid_cell_column_pos: 6
+                  grid_cell_row_pos: 0
+                  grid_cell_x_align: CENTER
+                  grid_cell_y_align: CENTER
+                  grid_cell_column_span: 3
+                  text: "0.00 kr"
+                  text_font: font20
+              - label:
+                  id: lbl_high_price_time
+                  grid_cell_column_pos: 6
+                  grid_cell_row_pos: 1
+                  grid_cell_x_align: END
+                  grid_cell_y_align: START
+                  grid_cell_column_span: 2
+                  text: " "
+                  text_color: color_gray
+              - label:
+                  id: lbl_high_price_symbol
+                  grid_cell_column_pos: 8
+                  grid_cell_row_pos: 1
+                  grid_cell_x_align: START
+                  grid_cell_y_align: START
+                  grid_cell_column_span: 1
+                  pad_left: 5
+                  text: "${price_high}"
+                  text_color: color_gray
