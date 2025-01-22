@@ -178,7 +178,7 @@ display:
     pclk_frequency: 12MHz
     pclk_inverted: true
     show_test_card: false
-    # rotation: 90
+    rotation: 90
     dimensions:
       width: 480
       height: 480
@@ -223,6 +223,10 @@ touchscreen:
   display: maindisp
   interrupt_pin: GPIO16
   address: 0x14
+  transform:
+    mirror_x: true
+    mirror_y: false
+    swap_xy: true
 
 #############################################
 ###             GLOBALS                   ###
@@ -321,23 +325,34 @@ globals:
 button:
   - platform: template
     id: btn_load_prices
-    name: "Hent Priser"
+    name: "2. Hent Priser"
     on_press: 
       then:
         - script.execute: get_energy_prices
   - platform: template
     id: btn_load_config
-    name: "Hent Konfiguration"
+    name: " 1. Hent Konfiguration"
     on_press: 
       then:
         - script.execute: get_configuration
-        - script.execute: update_high_low_prices
   - platform: template
     id: btn_update_high_low
-    name: "Opdater Høj/Lav"
+    name: "3. Opdater Høj/Lav"
+    on_press: 
+      then:
+        - script.execute: update_high_low_prices
+  - platform: template
+    id: btn_update_grid_hours
+    name: "4. Opdater Time Labels"
     on_press: 
       then:
         - script.execute: update_grid_hours
+  - platform: template
+    id: btn_update_bar_values
+    name: "5. Opdater Bar Værdier"
+    on_press: 
+      then:
+        - script.execute: update_bar_values
 
 
 #############################################
@@ -734,7 +749,6 @@ script:
                 format: "Kl. %s"
                 args: ["id(priceHighTimeText).state.c_str()"]
 
-
   ### UPDATE GRID WITH HOUR VALUES AND HOURLY PRICES ###
   - id: update_grid_hours
     then:
@@ -755,7 +769,6 @@ script:
                 lv_label_set_text_fmt(id(hour_labels)[i], "%s", esphome::to_string(nextHour).c_str());
                 nextHour++;
               }
-
 
   ### UPDATE BAR VALUES AND HOURLY PRICES ###
   - id: update_bar_values
