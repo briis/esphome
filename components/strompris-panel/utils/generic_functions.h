@@ -51,7 +51,8 @@ std::string getTomorrowCurrentTime()
 {
     std::time_t now = std::time(nullptr);
     std::tm tm = *std::gmtime(&now);  // Use gmtime directly
-    tm.tm_mday += 1;  // Add one day
+    std::time_t future = now + (23 * 60 * 60); // Add 23 hours in seconds
+    tm = *std::gmtime(&future);
     tm.tm_min = 0;
     tm.tm_sec = 0;
     char buffer[30];
