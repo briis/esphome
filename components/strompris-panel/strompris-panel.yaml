@@ -150,7 +150,7 @@ time:
           - script.execute: update_grid_hours
           - script.execute: update_bar_values
 
-# web_server:
+web_server:
 
 #############################################
 ###               HARDWARE                ###
@@ -178,6 +178,7 @@ display:
     pclk_frequency: 12MHz
     pclk_inverted: true
     show_test_card: false
+    # rotation: 90
     dimensions:
       width: 480
       height: 480
@@ -547,6 +548,11 @@ image:
   - file: images/esphome-logo.png
     id: boot_logo
     resize: 200x200
+    type: RGB565
+    use_transparency: true
+  - file: images/brback480x480.jpg
+    id: boot_logo_br
+    resize: 480x480
     type: RGB565
     use_transparency: true
 
@@ -1009,11 +1015,11 @@ lvgl:
           widgets:
             - image:
                 align: CENTER
-                src: boot_logo
-                y: -40
+                src: boot_logo_br
+                # y: -40
             - spinner:
                 align: CENTER
-                y: 95
+                y: 135
                 height: 50
                 width: 50
                 spin_time: 1s
@@ -1564,6 +1570,8 @@ lvgl:
                     # HOUR INDICATORS
                     - label:
                         id: label_hour_0
+                        pad_left: 2
+                        pad_right: 2
                         grid_cell_column_pos: 0
                         grid_cell_row_pos: 3
                         grid_cell_x_align: CENTER
