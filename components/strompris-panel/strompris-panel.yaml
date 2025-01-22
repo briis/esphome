@@ -107,10 +107,12 @@ wifi:
     password: "OqAf8mBmOD1j"
   on_connect:
     then:
-      - delay: 15s
+      - delay: 5s
       - script.execute: get_configuration
       - script.execute: get_energy_prices
       - script.execute: update_high_low_prices
+      - script.execute: update_grid_hours
+      - script.execute: update_bar_values
       - lvgl.widget.hide: boot_screen
       - lvgl.label.update:
           id: lbl_wifi
@@ -140,14 +142,15 @@ time:
           - script.execute: update_current_time
       # Every Hour
       - seconds: 0
-        minutes: 0
+        minutes: 1
         hours: '*'
         then:
           - script.execute: get_energy_prices
           - script.execute: update_high_low_prices
+          - script.execute: update_grid_hours
+          - script.execute: update_bar_values
 
-web_server:
-
+# web_server:
 
 #############################################
 ###               HARDWARE                ###
@@ -248,6 +251,10 @@ globals:
     type: int[24]
     restore_value: False
 
+  - id: priceArraySize
+    type: size_t
+    restore_value: False
+
   - id: priceHigh
     type: double
     restore_value: False
@@ -275,6 +282,37 @@ globals:
     restore_value: False
     initial_value: "true"
 
+  - id: hour_labels
+    type: std::array<lv_obj_t *, 24>
+    restore_value: no
+    initial_value: |
+      {&id(label_hour_0), &id(label_hour_1), &id(label_hour_2), &id(label_hour_3),
+        &id(label_hour_4), &id(label_hour_5), &id(label_hour_6), &id(label_hour_7),
+        &id(label_hour_8), &id(label_hour_9), &id(label_hour_10), &id(label_hour_11),
+        &id(label_hour_12), &id(label_hour_13), &id(label_hour_14), &id(label_hour_15),
+        &id(label_hour_16), &id(label_hour_17), &id(label_hour_18), &id(label_hour_19),
+        &id(label_hour_20), &id(label_hour_21), &id(label_hour_22), &id(label_hour_23)}
+  - id: price_labels
+    type: std::array<lv_obj_t *, 24>
+    restore_value: no
+    initial_value: |
+      {&id(label_price_0), &id(label_price_1), &id(label_price_2), &id(label_price_3),
+        &id(label_price_4), &id(label_price_5), &id(label_price_6), &id(label_price_7),
+        &id(label_price_8), &id(label_price_9), &id(label_price_10), &id(label_price_11),
+        &id(label_price_12), &id(label_price_13), &id(label_price_14), &id(label_price_15),
+        &id(label_price_16), &id(label_price_17), &id(label_price_18), &id(label_price_19),
+        &id(label_price_20), &id(label_price_21), &id(label_price_22), &id(label_price_23)}
+
+  - id: price_bars
+    type: std::array<lv_obj_t *, 24>
+    restore_value: no
+    initial_value: |
+      {&id(bar_price_0), &id(bar_price_1), &id(bar_price_2), &id(bar_price_3),
+        &id(bar_price_4), &id(bar_price_5), &id(bar_price_6), &id(bar_price_7),
+        &id(bar_price_8), &id(bar_price_9), &id(bar_price_10), &id(bar_price_11),
+        &id(bar_price_12), &id(bar_price_13), &id(bar_price_14), &id(bar_price_15),
+        &id(bar_price_16), &id(bar_price_17), &id(bar_price_18), &id(bar_price_19),
+        &id(bar_price_20), &id(bar_price_21), &id(bar_price_22), &id(bar_price_23)}
 
 #############################################
 ###             BUTTONS                   ###
@@ -298,7 +336,7 @@ button:
     name: "Opdater Høj/Lav"
     on_press: 
       then:
-        - script.execute: update_high_low_prices
+        - script.execute: update_grid_hours
 
 
 #############################################
@@ -386,6 +424,7 @@ font:
     id: font36
     size: 36
     bpp: 4
+    glyphs: '!"%()+=,-_.:&°/[]0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÆØÅ abcdefghijklmnopqrstuvwxyzæøå'
   - file: 
       type: gfonts
       family: Montserrat
@@ -580,8 +619,7 @@ script:
           // SET THE REPORT DATE IN THE CORRECT FORMAT
           id(report_start_date) = getCurrentHourStart();
           id(report_end_date) = getTomorrowCurrentTime();
-          int daylight_saving = getDaylightSavingOffset();
-          ESP_LOGD("information","REPORT START: %s - END: %s DAYLIGHT: %d", id(report_start_date).c_str(), id(report_end_date).c_str(), daylight_saving);
+          ESP_LOGD("information","REPORT START: %s - END: %s", id(report_start_date).c_str(), id(report_end_date).c_str());
       - http_request.get:
           url: !lambda |-
             return ((std::string) esphome::to_string("https://data.briis.com/stromdata.json"));
@@ -602,7 +640,7 @@ script:
                         json::parse_json(body, [](JsonObject elem) -> bool {
                           if (elem["prices"]) {
                             size_t array_size = elem["prices"].size();
-                            ESP_LOGD("information","Processing Array data...");
+                            ESP_LOGD("information","Processing Array. with %d rows of data...", array_size);
                             id(tomorrow_data_valid) = array_size == 24;
                             int current_hour = id(sntp_time).now().hour;
                             // LOAD PRICES AND STORE THEM IN THE prices ARRAY
@@ -618,12 +656,17 @@ script:
 
                               // ESP_LOGD("information","PRICE: %.2f , HOUR: %d, CURRENT: %d", id(prices)[i], item_hour, current_hour);
                             }
+                            // FILL THE PRICETIME ARRAY
+                            for (int i = array_size; i < 24; i++) {
+                              id(prices)[i] = 0;
+                              id(priceTimes)[i] = 0;
+                            }
                             // CALCULATE THE HIGHEST AND LOWEST PRICE AND TIME
                             id(priceLow) = id(prices)[0];
                             id(priceHigh) = id(prices)[0];
                             for (int i = 1; i < array_size; i++) {
                                 int i_hour = id(priceTimes)[i];
-                                if (id(prices)[i] < id(priceLow)) {
+                                if (id(prices)[i] < id(priceLow) && id(prices)[i] > 0) {
                                     id(priceLow) = id(prices)[i];
                                     id(priceLowTimeText).publish_state(formatHighLowTime(i_hour));
                                 }
@@ -633,6 +676,7 @@ script:
                                 }
                             }
                             // FINALIZE READ
+                            id(priceArraySize) = array_size;
                             id(priceCurrent) = id(prices)[0];
                             id(price_data_loaded) = true;
                             ESP_LOGD("information","Strøm priser opdateret");
@@ -647,41 +691,85 @@ script:
                     - logger.log:
                         format: "Error: Response status: %d, message %s"
                         args: ["response->status_code", "body.c_str()"]
+          on_error:
+            then:
+              - logger.log: "Kunne ikke indlæse nye pris oplysning. Prøver igen senere."
+              - lambda: |-
+                  id(price_data_loaded) = false;
 
   ### UPDATE LOW, CURRENT AND HIGH PRICES ###
   - id: update_high_low_prices
     then:
-      - lambda: |-
-          if (id(price_data_loaded)) {
-            auto cur_color = getColorFromValue(id(priceLow));
-            lv_obj_set_style_text_color(id(lbl_low_price_symbol), cur_color, static_cast<lv_part_t>(LV_PART_MAIN) | static_cast<lv_state_t>(LV_STATE_DEFAULT));
-            lv_label_set_text_fmt(id(lbl_low_price), "%s kr", formatFloat2d(id(priceLow)).c_str());
-          }
-      - lambda: |-
-          if (id(price_data_loaded)) {
-            auto cur_color = getColorFromValue(id(priceCurrent));
-            lv_obj_set_style_text_color(id(lbl_current_price), cur_color, static_cast<lv_part_t>(LV_PART_MAIN) | static_cast<lv_state_t>(LV_STATE_DEFAULT));
-            lv_obj_set_style_text_color(id(lbl_current_price_symbol), cur_color, static_cast<lv_part_t>(LV_PART_MAIN) | static_cast<lv_state_t>(LV_STATE_DEFAULT));
-            lv_label_set_text_fmt(id(lbl_current_price), "%s kr", formatFloat2d(id(priceCurrent)).c_str());
-          }
-      - lambda: |-
-          if (id(price_data_loaded)) {
-            auto cur_color = getColorFromValue(id(priceHigh));
-            lv_obj_set_style_text_color(id(lbl_high_price_symbol), cur_color, static_cast<lv_part_t>(LV_PART_MAIN) | static_cast<lv_state_t>(LV_STATE_DEFAULT));
-            lv_label_set_text_fmt(id(lbl_high_price), "%s kr", formatFloat2d(id(priceHigh)).c_str());
-          }
-      - lvgl.label.update:
-          id: lbl_low_price_time
-          text: 
-            format: "Kl. %s"
-            args: ["id(priceLowTimeText).state.c_str()"]
-      - lvgl.label.update:
-          id: lbl_high_price_time
-          text: 
-            format: "Kl. %s"
-            args: ["id(priceHighTimeText).state.c_str()"]
+      if:
+        condition:
+          - lambda: return id(price_data_loaded);
+        then:
+          - lambda: |-
+              auto cur_color = getColorFromValue(id(priceLow));
+              lv_obj_set_style_text_color(id(lbl_low_price_symbol), cur_color, static_cast<lv_part_t>(LV_PART_MAIN) | static_cast<lv_state_t>(LV_STATE_DEFAULT));
+              lv_label_set_text_fmt(id(lbl_low_price), "%s kr", formatFloat2dec(id(priceLow)).c_str());
+          - lambda: |-
+              auto cur_color = getColorFromValue(id(priceCurrent));
+              lv_obj_set_style_text_color(id(lbl_current_price), cur_color, static_cast<lv_part_t>(LV_PART_MAIN) | static_cast<lv_state_t>(LV_STATE_DEFAULT));
+              lv_obj_set_style_text_color(id(lbl_current_price_symbol), cur_color, static_cast<lv_part_t>(LV_PART_MAIN) | static_cast<lv_state_t>(LV_STATE_DEFAULT));
+              lv_label_set_text_fmt(id(lbl_current_price), "%s kr", formatFloat2dec(id(priceCurrent)).c_str());
+          - lambda: |-
+              auto cur_color = getColorFromValue(id(priceHigh));
+              lv_obj_set_style_text_color(id(lbl_high_price_symbol), cur_color, static_cast<lv_part_t>(LV_PART_MAIN) | static_cast<lv_state_t>(LV_STATE_DEFAULT));
+              lv_label_set_text_fmt(id(lbl_high_price), "%s kr", formatFloat2dec(id(priceHigh)).c_str());
+          - lvgl.label.update:
+              id: lbl_low_price_time
+              text: 
+                format: "Kl. %s"
+                args: ["id(priceLowTimeText).state.c_str()"]
+          - lvgl.label.update:
+              id: lbl_high_price_time
+              text: 
+                format: "Kl. %s"
+                args: ["id(priceHighTimeText).state.c_str()"]
 
-  ### DISPLAY TIME AND DATE ON THE INFO PAGE ###
+
+  ### UPDATE GRID WITH HOUR VALUES AND HOURLY PRICES ###
+  - id: update_grid_hours
+    then:
+      if:
+        condition:
+          - lambda: return id(price_data_loaded);
+        then:
+          - lambda: |
+              // LOOP THROUGH THE AVAILABLE DATA
+              for (int i = 0; i < id(priceArraySize); i++) {
+                lv_label_set_text_fmt(id(price_labels)[i], "%s", formatFloat2dec(id(prices)[i]).c_str());
+                lv_label_set_text_fmt(id(hour_labels)[i], "%s", esphome::to_string(id(priceTimes)[i]).c_str());
+              }
+              // IF WE DON'T HAVE 24 HOURS OF DATA FILL THE REST WITH DEFAULT VALUES
+              int nextHour = 0;
+              for (int i = id(priceArraySize); i < 24; i++) {
+                lv_label_set_text_fmt(id(price_labels)[i], "%s", formatFloat2dec(id(prices)[i]).c_str());
+                lv_label_set_text_fmt(id(hour_labels)[i], "%s", esphome::to_string(nextHour).c_str());
+                nextHour++;
+              }
+
+
+  ### UPDATE BAR VALUES AND HOURLY PRICES ###
+  - id: update_bar_values
+    then:
+      if:
+        condition:
+          - lambda: return id(price_data_loaded);
+        then:
+          - lambda: |
+              float highPrice = id(priceHigh) + 0.5;
+              int current_hour = id(sntp_time).now().hour;
+
+              for (int i = 0; i < 24; i++) {
+                lv_bar_set_range(id(price_bars)[i], 0, highPrice * 1000);
+                lv_bar_set_value(id(price_bars)[i], id(prices)[i] * 1000, LV_ANIM_OFF);
+                auto color = getColorFromValue(id(prices)[i]);
+                lv_obj_set_style_bg_color(id(price_bars)[i], color, static_cast<lv_part_t>(LV_PART_INDICATOR) | static_cast<lv_state_t>(LV_STATE_DEFAULT));
+              }
+
+  ### DISPLAY TIME AND DATE ON THE TOP MENU ###
   - id: update_current_time
     then:
       - lvgl.label.update:
@@ -689,6 +777,14 @@ script:
           text: !lambda |-
             if (id(sntp_time).now().is_valid()) {
               return id(sntp_time).now().strftime("%H:%M");
+            } else {
+              return "Invalid Time";
+            }
+      - lvgl.label.update:
+          id: lbl_date
+          text: !lambda |-
+            if (id(sntp_time).now().is_valid()) {
+              return datetimeToDkText(id(sntp_time).now());
             } else {
               return "Invalid Time";
             }
@@ -773,8 +869,8 @@ lvgl:
       bg_color: color_gray
       indicator:
         bg_color: color_gray
-      width: 10
-      height: 135
+      width: 14
+      height: 190
     button:
       width: 100
       height: 70
@@ -826,6 +922,12 @@ lvgl:
       pad_row: 0
       pad_column: 5
       border_opa: TRANSP
+    - id: bar_grid
+      width: 100%
+      height: 320
+      bg_color: color_bg
+      pad_all: 0
+      border_opa: TRANSP
 
   top_layer:
     widgets:
@@ -843,13 +945,14 @@ lvgl:
           widgets:
             # HEADER
             - label:
-                id: lbl_time
+                id: lbl_version
                 grid_cell_column_pos: 0
                 grid_cell_row_pos: 0
                 grid_cell_x_align: START
                 grid_cell_y_align: CENTER
-                text: " "
+                text: "V${version}"
                 text_color: color_amber
+                text_font: font14
             - label:
                 id: lbl_header
                 recolor: true
@@ -857,7 +960,7 @@ lvgl:
                 grid_cell_row_pos: 0
                 grid_cell_x_align: CENTER
                 grid_cell_y_align: CENTER
-                text: "#FFFFFF Strømpris# #00A8F4 Panel# #FFFFFF v ${version}#"
+                text: "#FFFFFF Strømpris# #00A8F4 Panel#"
             - label:
                 id: lbl_wifi
                 grid_cell_column_pos: 2
@@ -933,7 +1036,7 @@ lvgl:
             layout:
               type: grid
               grid_columns: [fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1)]
-              grid_rows: [24px, 20px, fr(1)]
+              grid_rows: [28px, 24px, fr(1)]
               grid_column_align: CENTER
               grid_row_align: CENTER
               pad_row: 0
@@ -1023,3 +1126,679 @@ lvgl:
                   pad_left: 5
                   text: "${price_high}"
                   text_color: color_gray
+
+              - obj:
+                  id: priceChart
+                  align: CENTER
+                  styles: bar_grid
+                  border_side: TOP
+                  border_width: 1
+                  border_opa: COVER
+                  bg_color: color_widget_bg
+                  grid_cell_column_pos: 0
+                  grid_cell_row_pos: 2
+                  grid_cell_column_span: 9
+                  grid_cell_x_align: CENTER
+                  grid_cell_y_align: CENTER
+                  layout:
+                    type: GRID
+                    grid_columns: [fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1), fr(1)]
+                    grid_rows: [16px, 16px, fr(1), 20px, 41px, 19px]
+                    grid_column_align: CENTER
+                    pad_row: 0
+                    pad_column: 0
+                  widgets:
+                    - label:
+                        id: label_price_0
+                        grid_cell_column_pos: 0
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_1
+                        grid_cell_column_pos: 1
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_2
+                        grid_cell_column_pos: 2
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_3
+                        grid_cell_column_pos: 3
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_4
+                        grid_cell_column_pos: 4
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_5
+                        grid_cell_column_pos: 5
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_6
+                        grid_cell_column_pos: 6
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_7
+                        grid_cell_column_pos: 7
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_8
+                        grid_cell_column_pos: 8
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_9
+                        grid_cell_column_pos: 9
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_10
+                        grid_cell_column_pos: 10
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_11
+                        grid_cell_column_pos: 11
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_12
+                        grid_cell_column_pos: 12
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_13
+                        grid_cell_column_pos: 13
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_14
+                        grid_cell_column_pos: 14
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_15
+                        grid_cell_column_pos: 15
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_16
+                        grid_cell_column_pos: 16
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_17
+                        grid_cell_column_pos: 17
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_18
+                        grid_cell_column_pos: 18
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_19
+                        grid_cell_column_pos: 19
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_20
+                        grid_cell_column_pos: 20
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_21
+                        grid_cell_column_pos: 21
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_22
+                        grid_cell_column_pos: 22
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+                    - label:
+                        id: label_price_23
+                        grid_cell_column_pos: 23
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font12
+                        text: "0.0"
+
+                    # BAR VALUES
+                    - bar:
+                        id: bar_price_0
+                        grid_cell_column_pos: 0
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        indicator:
+                          text_color: color_white
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_1
+                        grid_cell_column_pos: 1
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_2
+                        grid_cell_column_pos: 2
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_3
+                        grid_cell_column_pos: 3
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_4
+                        grid_cell_column_pos: 4
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_5
+                        grid_cell_column_pos: 5
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_6
+                        grid_cell_column_pos: 6
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_7
+                        grid_cell_column_pos: 7
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_8
+                        grid_cell_column_pos: 8
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_9
+                        grid_cell_column_pos: 9
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_10
+                        grid_cell_column_pos: 10
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_11
+                        grid_cell_column_pos: 11
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_12
+                        grid_cell_column_pos: 12
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_13
+                        grid_cell_column_pos: 13
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_14
+                        grid_cell_column_pos: 14
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_15
+                        grid_cell_column_pos: 15
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_16
+                        grid_cell_column_pos: 16
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_17
+                        grid_cell_column_pos: 17
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_18
+                        grid_cell_column_pos: 18
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_19
+                        grid_cell_column_pos: 19
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_20
+                        grid_cell_column_pos: 20
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_21
+                        grid_cell_column_pos: 21
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_22
+                        grid_cell_column_pos: 22
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+                    - bar:
+                        id: bar_price_23
+                        grid_cell_column_pos: 23
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        value: 0
+                        min_value: 0
+                        max_value: 7
+
+                    # HOUR INDICATORS
+                    - label:
+                        id: label_hour_0
+                        grid_cell_column_pos: 0
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "00"
+                        text_color: color_white
+                        bg_color: color_blue
+                        bg_opa: COVER
+                    - label:
+                        id: label_hour_1
+                        grid_cell_column_pos: 1
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "01"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_2
+                        grid_cell_column_pos: 2
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "02"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_3
+                        grid_cell_column_pos: 3
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "03"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_4
+                        grid_cell_column_pos: 4
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "04"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_5
+                        grid_cell_column_pos: 5
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "05"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_6
+                        grid_cell_column_pos: 6
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "06"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_7
+                        grid_cell_column_pos: 7
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "07"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_8
+                        grid_cell_column_pos: 8
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "08"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_9
+                        grid_cell_column_pos: 9
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "09"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_10
+                        grid_cell_column_pos: 10
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "10"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_11
+                        grid_cell_column_pos: 11
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "11"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_12
+                        grid_cell_column_pos: 12
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "12"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_13
+                        grid_cell_column_pos: 13
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text_color: color_gray
+                        text: "13"
+                    - label:
+                        id: label_hour_14
+                        grid_cell_column_pos: 14
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "14"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_15
+                        grid_cell_column_pos: 15
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "15"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_16
+                        grid_cell_column_pos: 16
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "16"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_17
+                        grid_cell_column_pos: 17
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "17"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_18
+                        grid_cell_column_pos: 18
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "18"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_19
+                        grid_cell_column_pos: 19
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "19"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_20
+                        grid_cell_column_pos: 20
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "20"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_21
+                        grid_cell_column_pos: 21
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "21"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_22
+                        grid_cell_column_pos: 22
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "22"
+                        text_color: color_gray
+                    - label:
+                        id: label_hour_23
+                        grid_cell_column_pos: 23
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: END
+                        text_font: font12
+                        text: "23"                                        
+                        text_color: color_gray
+
+                    # TIME AND DATE
+                    - label:
+                        id: lbl_time
+                        grid_cell_column_pos: 0
+                        grid_cell_row_pos: 4
+                        grid_cell_column_span: 24
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font36
+                        text: " "                                        
+                        text_color: color_white
+                    - label:
+                        id: lbl_date
+                        grid_cell_column_pos: 0
+                        grid_cell_row_pos: 5
+                        grid_cell_column_span: 24
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        text_font: font14
+                        text: " "                                        
+                        text_color: color_blue

@@ -586,62 +586,87 @@ script:
                   then:
                     - lambda: |-
                         json::parse_json(body, [](JsonObject elem) -> bool {
-                          if (elem["prices"]) {
-                            size_t array_size = elem["prices"].size();
-                            ESP_LOGD("information","Processing Array data...");
-                            id(tomorrow_data_valid) = array_size > 24;
-                            int current_hour = id(sntp_time).now().hour;
-                            // LOAD PRICES AND STORE THEM IN THE prices ARRAY
-                            for (int i = 0; i < 24; i++) {
-                              int item_hour = std::stoi(std::string(elem["prices"][i]["date"]).substr(11, 2));
-                              if (item_hour == 23) { item_hour = 0;} else { item_hour +=1;}
-                              if (item_hour < current_hour) {
-                                if (id(tomorrow_data_valid)) {
-                                  id(prices)[i] = elem["prices"][i + 24]["price"]["total"];
-                                } else {
-                                  id(prices)[i] = elem["prices"][i]["price"]["total"];
-                                }
-                              } else {
-                                id(prices)[i] = elem["prices"][i]["price"]["total"];
-                              }                              
-                              // ESP_LOGD("information","PRICE: %.2f , HOUR: %d", id(prices)[i], item_hour);
-                            }
-                            // CALCULATE THE HIGHEST AND LOWEST PRICE AND TIME
-                            id(priceLow) = id(prices)[0];
-                            id(priceHigh) = id(prices)[0];
-                            for (int i = 1; i < 24; i++) {
-                                if (id(prices)[i] < id(priceLow)) {
-                                    id(priceLow) = id(prices)[i];
-                                    id(priceLowTimeText).publish_state(formatHighLowTime(i));
-                                }
-                                if (id(prices)[i] > id(priceHigh)) {
-                                    id(priceHigh) = id(prices)[i];
-                                    id(priceHighTimeText).publish_state(formatHighLowTime(i));
-                                }
-                            }
-                            // FINALIZE READ
-                            // Store Current Hour in the prices array
-                            int current_hour = id(sntp_time).now().hour;
-                            for (int i = 0; i < 24; i++) {
-                                if (id(priceTimes)[i] == current_hour) {
-                                    id(priceCurrent) = id(prices)[i];
-                                    break;
-                                }
-                            }
-//                            id(priceCurrent) = id(prices)[id(sntp_time).now().hour];
-                            id(price_data_loaded) = true;
-                            ESP_LOGD("information","Strøm priser opdateret");
-                          } else {
-                            ESP_LOGD("information","Not valid json data!");
+                          if (!elem.containsKey("prices")) {
+                            ESP_LOGE("error", "Missing 'prices' key in JSON response");
                             return false;
                           }
-                          ESP_LOGD("information","PRICE LOW: %.2f TID: %s , PRICE HIGH: %.2f TID: %s , PRICE NOW: %.2f", id(priceLow), id(priceLowTimeText).state.c_str(), id(priceHigh), id(priceHighTimeText).state.c_str(), id(priceCurrent));
+
+                          JsonArray prices = elem["prices"].as<JsonArray>();
+                          size_t array_size = prices.size();
+                          if (array_size < 24) {
+                            ESP_LOGE("error", "Insufficient price data: expected at least 24 entries, got %d", array_size);
+                            return false;
+                          }
+
+                          ESP_LOGD("information","Processing Array data...");
+                          id(tomorrow_data_valid) = array_size > 24;
+                          int current_hour = id(sntp_time).now().hour;
+
+                          // LOAD PRICES AND STORE THEM IN THE prices ARRAY
+                          for (int i = 0; i < 24; i++) {
+                            if (!prices[i].is<JsonObject>()) {
+                              ESP_LOGE("error", "Invalid price entry at index %d", i);
+                              return false;
+                            }
+
+                            JsonObject price_obj = prices[i].as<JsonObject>();
+                            if (!price_obj.containsKey("date") || !price_obj.containsKey("price")) {
+                              ESP_LOGE("error", "Missing 'date' or 'price' key in price entry at index %d", i);
+                              return false;
+                            }
+
+                            std::string date = price_obj["date"].as<std::string>();
+                            int item_hour = std::stoi(date.substr(11, 2));
+                            if (item_hour == 23) { item_hour = 0; } else { item_hour += 1; }
+
+                            float price_value = price_obj["price"]["total"].as<float>();
+                            if (item_hour < current_hour && id(tomorrow_data_valid)) {
+                              price_value = prices[i + 24]["price"]["total"].as<float>();
+                            }
+
+                            id(prices)[i] = price_value;
+                            id(priceTimes)[i] = item_hour;
+                          }
+
+                          // CALCULATE THE HIGHEST AND LOWEST PRICE AND TIME
+                          id(priceLow) = id(prices)[0];
+                          id(priceHigh) = id(prices)[0];
+                          for (int i = 1; i < 24; i++) {
+                            if (id(prices)[i] < id(priceLow)) {
+                              id(priceLow) = id(prices)[i];
+                              id(priceLowTimeText).publish_state(formatHighLowTime(i));
+                            }
+                            if (id(prices)[i] > id(priceHigh)) {
+                              id(priceHigh) = id(prices)[i];
+                              id(priceHighTimeText).publish_state(formatHighLowTime(i));
+                            }
+                          }
+
+                          // Store Current Hour in the prices array
+                          for (int i = 0; i < 24; i++) {
+                            if (id(priceTimes)[i] == current_hour) {
+                              id(priceCurrent) = id(prices)[i];
+                              break;
+                            }
+                          }
+
+                          id(price_data_loaded) = true;
+                          ESP_LOGD("information","Strøm priser opdateret");
                           return true;
                         });
                   else:
                     - logger.log:
                         format: "Error: Response status: %d, message %s"
                         args: ["response->status_code", "body.c_str()"]
+              - if:
+                  condition:
+                    lambda: return !id(price_data_loaded);
+                  then:
+                    - logger.log: "Failed to load price data"
+                    - lambda: |-
+                        id(price_data_loaded) = false;
+                        id(tomorrow_data_valid) = false;
+                        ESP_LOGE("error", "Failed to process price data")
 
   ### UPDATE LOW, CURRENT AND HIGH PRICES ###
   - id: update_high_low_prices
